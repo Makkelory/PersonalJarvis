@@ -11202,6 +11202,9 @@ rebuild remains a new app to TCC. A Developer-ID signing identity is the
 structural fix; until then a rebuild costs the user one round of re-granting,
 now visible in the log and explained in the UI.
 
+**Closed 2026-09-16 by BUG-217.** The bundle is now signed with a per-user
+certificate, so a rebuild keeps the same TCC identity and resets nothing.
+
 ---
 
 ## BUG-160: a spoken question is answered with "Erledigt." and the real answer is thrown away — every Gemini/Vertex Live tool call fakes a mute provider (CRITICAL, FIXED 2026-08-20)
@@ -11368,6 +11371,10 @@ that IS necessary still costs one round of re-granting. A Developer-ID signing
 identity is the structural fix. The rebuild guard also arms only after the
 first rebuild it observes, so an install already caught in the loop pays for
 one more round before it stops.
+
+**Closed 2026-09-16 by BUG-217.** With the per-user signing certificate a
+necessary rebuild no longer changes the TCC identity; the guard is only a
+safety net now.
 
 ## BUG-162: dictation silently drops the end of what was said — a deep queue that never applied, a truncation guard that fired once in 797 recordings, and a loss nothing reported (HIGH, FIXED 2026-08-21)
 
@@ -15262,3 +15269,87 @@ with the command that fixes it instead of claiming the app is findable.
 `mdutil` output, mount-point resolution, import on registration, a Spotlight
 crash never blocks `lsregister`), `tests/unit/diagnostics/test_doctor_diagnostics.py`
 (`check_macos_spotlight`).
+
+## BUG-217: macOS asked for every permission again after each rebuild, and the Music prompt never stuck (HIGH, FIXED 2026-09-16)
+
+**Symptom.** After an update or reinstall, Personal Jarvis asked for
+Microphone, Screen Recording, Accessibility, Input Monitoring and Input
+Control all over again. The "Music / Spotify" Automation dialog appeared in
+the middle of a dictation, sometimes on every voice session, and no
+permission view knew it existed. The reporting Mac's install log of the day
+shows the exact moment: a bundle-format rebuild followed by five
+`Reset stale TCC rows for …` lines.
+
+**Root causes, four of them.**
+
+1. *Ad-hoc signature = CDHash identity.* macOS pins every TCC grant to the
+   app's designated requirement. For an ad-hoc signature that requirement is
+   `cdhash H"…"` — the hash of the very bytes that every rebuild changes. So
+   every rebuild was a new app to TCC, the recorded grants were orphaned, and
+   BUG-083 had to reset them so macOS would prompt at all. BUG-159 and
+   BUG-161 both closed with "the underlying churn is the ad-hoc signature
+   itself — still open". It was.
+2. *The Automation consent lived outside the model.* `kTCCServiceAppleEvents`
+   was neither in the installer's reset sweep nor in `PermissionId`; the only
+   thing that ever asked for it was a 3-second `osascript` fired when the
+   ducking toggle was flipped or mid-session. A 3 s timeout kills osascript
+   while the dialog is still up, so the user's answer was never recorded and
+   the next session asked again.
+3. *No live probe for a closed player.* Apple only answers
+   `AEDeterminePermissionToAutomateTarget` for a running target, so a row for
+   it could not simply read the OS.
+4. *Six buttons and a restart to find.* Nothing walked the user through the
+   list; each grant was its own click, its own Settings visit and its own
+   restart decision.
+
+**Fix.**
+
+- `jarvis/setup/macos_signing_identity.py` creates a self-signed
+  code-signing certificate once per user ("Personal Jarvis Local Signing"),
+  imports it into the login keychain with codesign access and trusts it for
+  code signing in the user domain — the one step macOS guards with a
+  password dialog, so only the installer (`--create-signing-identity`) may
+  run it; the app itself only looks the identity up. `macos_app_bundle`
+  signs with it, and the TCC identity is now the designated requirement
+  (`identifier "com.personal-jarvis.desktop" and certificate leaf = H"…"`)
+  instead of the CDHash: verified on macOS 15.7.4 — two differently built
+  bundles, same requirement. A rebuild resets nothing anymore. A healthy
+  ad-hoc bundle is re-signed in place once (same files, atomic swap) at the
+  cost of one final round of re-granting; the running app is never re-signed
+  under itself, because the reset that follows would strip the grants of the
+  process asking. Falls back to ad-hoc (the old behaviour) without a GUI
+  session or when the user declines the dialog.
+- `AppleEvents` joined the reset sweep, and `automation` is the seventh
+  `PermissionId` (feature `audio_ducking`): probed live through
+  `AEDeterminePermissionToAutomateTarget` (ctypes, no pyobjc binding exists)
+  for every installed player; the request flow opens a closed player hidden
+  through `NSWorkspaceOpenConfiguration`, asks with `askUserIfNeeded`, closes
+  what it opened, and records each answer in
+  `macos-automation-consent.json` so the row stays final while the player is
+  closed. Every reset path (`tccutil reset AppleEvents`, an identity change)
+  drops that record. The ducking prewarm waits 120 s for the dialog instead
+  of 3 s, and the player list is shared between the scripts and the row.
+- **Set up everything** (`usePermissions.setupAll`): walks the missing rows
+  in a fixed order — pure dialogs first, Settings-switch rows last — waits
+  for each grant by polling, then restarts the app once when a grant only
+  applies to a fresh process. Onboarding keeps its own final restart; the
+  Settings card and the app-wide banner restart themselves.
+
+**Class rule.** A per-machine build must not carry a per-build identity.
+Anything the OS keys to "which app is this" (TCC, Keychain ACLs, LaunchAgent
+ownership) needs a certificate, not a hash, or every rebuild is a stranger.
+
+**Guards.** `tests/unit/setup/test_macos_signing_identity.py` (the
+`security` choreography, GUI-session refusal, hung dialog, real certificate
+material), `tests/unit/setup/test_macos_app_bundle.py` (designated-requirement
+parsing, identity signing, one-time re-sign with rollback, no reset when the
+requirement is unchanged, the running app is never re-signed),
+`tests/unit/platform/test_permissions.py` (the Automation row: live probe,
+hidden launch and close, recorded answers, strictest player wins, reset and
+identity change forget the answers), `usePermissions.test.tsx` and
+`PermissionsPanel.test.tsx` (the guided flow: order, waiting, cancel, the
+single restart, onboarding leaves the restart to itself).
+
+**Related.** BUG-083, BUG-159, BUG-161 (all "still open" on this point until
+now), `docs/product/privacy-safety-and-support/permissions.md`,
+`docs/os-parity.md`.

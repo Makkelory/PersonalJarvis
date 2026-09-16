@@ -323,6 +323,20 @@ point), logging the admin repair command when the store is disabled or broken;
 unchanged — their index announcements already feed the search the user types
 into.
 
+**Fix pass 2026-09-16 (macOS: one TCC identity for the life of the install,
+BUG-217).** The source installer creates a per-user code-signing certificate
+("Personal Jarvis Local Signing", login keychain, trusted for code signing in
+the user domain — the one password dialog of the install) and signs the bundle
+with it, so macOS pins privacy grants to `identifier + certificate` instead of
+the per-build CDHash: rebuilds and updates keep every grant. Without a GUI
+session, or if the dialog is declined, signing stays ad-hoc and the previous
+"reset on identity change" behaviour applies. The Music/Spotify Automation
+consent is a permission row of its own (`automation`), asked up front through
+`AEDeterminePermissionToAutomateTarget` with a hidden launch of a closed
+player, and **Set up everything** walks all rows and ends in a single restart.
+Windows and Linux: no TCC, no signing identity, the rows read "not required"
+as before.
+
 ## Audit verdict summary
 
 **No hard breakers found.** No feature crashes on macOS or headless Linux;
