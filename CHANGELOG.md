@@ -11,6 +11,21 @@ versioning per [SemVer](https://semver.org/).
 
 ---
 
+## [2.2.1] — 2026-09-16
+
+### Fixed
+
+- **Signed installer assets are back.** `pypdf` moved to 6.19.0
+  (PYSEC-2026-3910/-3911/-3913); `pip-audit --strict` had blocked the
+  Sigstore-signed `install.sh` / `install-verify.sh` release assets on every
+  tag since 6.15.0 picked up the advisories.
+- **Quiet failure paths of the macOS signing identity and Automation probe
+  now log** what did not answer (silent-exception ratchet).
+- **Spotlight health is judged by behaviour,** not by the data volume's
+  `mdutil` state alone.
+
+---
+
 ## [2.2.0] — 2026-09-16
 
 macOS permissions stop churning: the installed app carries one signing
