@@ -297,6 +297,48 @@ def check_computer_use_prereqs(config: Any) -> list[DoctorFinding]:
     return findings
 
 
+def check_macos_spotlight() -> list[DoctorFinding]:
+    """Whether Spotlight can actually find the installed macOS app.
+
+    LaunchServices registration does not put an app into Spotlight's search
+    (2026-09-16 report): the search field answers from the per-volume metadata
+    store, which can be broken machine-wide. Report the store state and whether
+    the bundle is really indexed, with the command that fixes each.
+    """
+    import sys as _sys
+
+    if _sys.platform != "darwin":
+        return []
+    from jarvis.setup.macos_app_bundle import macos_app_bundle_path
+    from jarvis.setup.macos_search_index import indexed_bundle_paths, spotlight_volume_issue
+
+    bundle = macos_app_bundle_path()
+    if not bundle.exists():
+        return []
+    issue = spotlight_volume_issue(bundle)
+    if issue is not None:
+        return [DoctorFinding(
+            "macos-spotlight", "warn",
+            f"Spotlight cannot index {bundle.name}: {issue.reason} on {issue.volume} "
+            "— no new file on this volume becomes searchable",
+            hint=f"{issue.repair_command}  (admin password; reindexing takes a while)",
+        )]
+    indexed = indexed_bundle_paths()
+    if indexed is None:
+        return [DoctorFinding(
+            "macos-spotlight", "info", "Spotlight could not be queried for the app bundle",
+        )]
+    if not indexed:
+        return [DoctorFinding(
+            "macos-spotlight", "warn",
+            f"{bundle.name} is installed but not in the Spotlight index",
+            hint=f'mdimport "{bundle}"',
+        )]
+    return [DoctorFinding(
+        "macos-spotlight", "ok", f"Spotlight finds {bundle.name} ({indexed[0]})",
+    )]
+
+
 def run_doctor(config: Any) -> list[DoctorFinding]:
     """Run every completeness check and return a flat, ordered finding list.
 
@@ -310,6 +352,7 @@ def run_doctor(config: Any) -> list[DoctorFinding]:
         ("subagent-backend", lambda: check_subagent_backend()),
         ("brain-provider", lambda: check_brain_provider(config)),
         ("computer-use", lambda: check_computer_use_prereqs(config)),
+        ("macos-spotlight", lambda: check_macos_spotlight()),
     )
     for category, fn in checks:
         try:

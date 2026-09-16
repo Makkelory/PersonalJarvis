@@ -205,3 +205,53 @@ def test_cu_prereqs_wayland_and_headless_are_info_not_failure(monkeypatch) -> No
     assert len(findings) == 1
     assert findings[0].status == "info"
     assert "Wayland" in findings[0].message
+
+
+def _spotlight_env(monkeypatch, tmp_path, *, issue=None, indexed=None):
+    """macOS with an installed bundle and scripted Spotlight probes."""
+    import sys
+
+    from jarvis.setup import macos_app_bundle, macos_search_index
+
+    bundle = tmp_path / "Personal Jarvis.app"
+    bundle.mkdir()
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(macos_app_bundle, "macos_app_bundle_path", lambda **_kw: bundle)
+    monkeypatch.setattr(macos_search_index, "spotlight_volume_issue", lambda _p: issue)
+    monkeypatch.setattr(macos_search_index, "indexed_bundle_paths", lambda *_a: indexed)
+    return bundle
+
+
+def test_spotlight_check_names_the_broken_store_and_its_repair(monkeypatch, tmp_path) -> None:
+    from jarvis.setup.macos_search_index import SpotlightVolumeIssue
+
+    _spotlight_env(
+        monkeypatch,
+        tmp_path,
+        issue=SpotlightVolumeIssue("/System/Volumes/Data", "the Spotlight index is not working"),
+    )
+    [finding] = doctor.check_macos_spotlight()
+    assert finding.status == "warn"
+    assert "/System/Volumes/Data" in finding.message
+    assert finding.hint is not None and "sudo mdutil -i on /System/Volumes/Data" in finding.hint
+
+
+def test_spotlight_check_flags_an_unindexed_bundle(monkeypatch, tmp_path) -> None:
+    bundle = _spotlight_env(monkeypatch, tmp_path, indexed=[])
+    [finding] = doctor.check_macos_spotlight()
+    assert finding.status == "warn"
+    assert finding.hint == f'mdimport "{bundle}"'
+
+
+def test_spotlight_check_ok_when_indexed(monkeypatch, tmp_path) -> None:
+    bundle = _spotlight_env(monkeypatch, tmp_path, indexed=[tmp_path / "Personal Jarvis.app"])
+    [finding] = doctor.check_macos_spotlight()
+    assert finding.status == "ok"
+    assert bundle.name in finding.message
+
+
+def test_spotlight_check_is_silent_off_macos(monkeypatch) -> None:
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert doctor.check_macos_spotlight() == []

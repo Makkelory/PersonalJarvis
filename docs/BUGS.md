@@ -15221,3 +15221,44 @@ boot critical path — the watchdog's first census is a full interval away), AP-
 (the probe's silence is explained by its documented "None means not ready"
 contract), BUG-113 (the pane-reconnect storm whose symptom was fixed in 2026-07
 while this cause was left standing), `docs/os-parity.md` (the ceilings table).
+
+## BUG-216: the installed macOS app did not show up in Spotlight (MEDIUM, FIXED 2026-09-16)
+
+**Symptom.** `~/Applications/Personal Jarvis.app` was installed, launchable and
+listed by `lsregister -dump`, yet typing "Personal Jarvis" into Spotlight found
+nothing.
+
+**Root cause, two layers.**
+
+1. *Product.* The 2026-08-16 fix (BUG-138 pass) assumed Spotlight answers from
+   the LaunchServices database and stopped at `lsregister`. It does not: the
+   Spotlight search field reads the per-volume metadata store kept by `mds`.
+   The bundle is built in a hidden `.jarvis-native-*` directory and renamed into
+   place, and nothing ever asked Spotlight to import it. The docstring claiming
+   "announce to LaunchServices so Spotlight can find it" was simply wrong.
+2. *Machine.* On the reporting Mac the Data volume's Spotlight store itself was
+   broken: `mdutil -s /System/Volumes/Data` answered "Error: unknown indexing
+   state", and `mdfind` returned no item changed in the preceding four days.
+   Freshly created test apps and plain text files in `~/Applications`,
+   `~/Downloads` and `~/Desktop` stayed unindexed for minutes, with and without
+   `mdimport`. On such a volume nothing new becomes searchable, whichever app
+   wrote it, and only an administrator can re-enable the store.
+
+**Fix.** `jarvis/setup/macos_search_index.py`: every install/repair path already
+calls `register_with_launch_services`, which now also runs `mdimport` on the
+bundle and checks the volume with `df -P` + `mdutil -s <mount point>`. A
+disabled or broken store logs a WARNING carrying the exact repair command
+(`sudo mdutil -i on <vol> && sudo mdutil -E <vol>`). `python -m jarvis --doctor`
+gained `macos-spotlight`: store broken → warn + repair command; bundle not in
+the index → warn + `mdimport`; indexed → ok. `mdutil -s` must be given the mount
+point — handed the bundle path it echoes that path back as the "volume", which
+the live probe caught before it shipped.
+
+**Class rule.** "Registered" is not "searchable": verify against the index the
+user's search box actually reads, and when the OS index itself is broken say so
+with the command that fixes it instead of claiming the app is findable.
+
+**Guards.** `tests/unit/setup/test_macos_search_index.py` (verbatim broken-store
+`mdutil` output, mount-point resolution, import on registration, a Spotlight
+crash never blocks `lsregister`), `tests/unit/diagnostics/test_doctor_diagnostics.py`
+(`check_macos_spotlight`).

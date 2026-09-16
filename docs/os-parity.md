@@ -314,6 +314,15 @@ so no platform silently claims an entry the shell cannot see. Announcement is
 re-run for an unchanged entry too, which heals an install whose earlier write
 succeeded while its announcement did not.
 
+**Fix pass 2026-09-16 (macOS: registered is not searchable, BUG-216).**
+LaunchServices and Spotlight are separate indexes; `lsregister` alone left the
+bundle out of Spotlight search. macOS now also imports the bundle with
+`mdimport` and checks the volume's Spotlight store (`mdutil -s` on the mount
+point), logging the admin repair command when the store is disabled or broken;
+`--doctor` reports the same as `macos-spotlight`. Windows and Linux are
+unchanged — their index announcements already feed the search the user types
+into.
+
 ## Audit verdict summary
 
 **No hard breakers found.** No feature crashes on macOS or headless Linux;
