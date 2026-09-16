@@ -9,16 +9,21 @@ the app process and runs the managed entry script, so it works with framework
 AND non-framework interpreters (for example uv-managed standalone builds)
 while the source and dependencies remain in the managed checkout.
 
-The locally generated app is ad-hoc signed and is preserved byte-for-byte on
-ordinary source updates so its local TCC identity does not churn. When a
-rebuild is unavoidable (format bump, broken bundle), the ad-hoc code signature
-changes and macOS orphans every previously recorded TCC grant — the old rows
-then read as silently DENIED for the "new" app and macOS never prompts again
-(BUG-083). After such a signature change this module therefore resets the
-stale TCC rows for our bundle id via ``tccutil`` so the app can prompt fresh.
-Public binary distribution still requires the separate Developer-ID signing
-and notarization pipeline; this module never claims an ad-hoc app is a
-notarized artifact.
+The locally generated app is signed with the per-user code-signing identity
+from ``macos_signing_identity`` whenever one exists. macOS then pins the TCC
+grants to ``identifier + certificate`` instead of to the code-directory hash,
+so the bundle can be rebuilt as often as needed without losing a single
+permission. Without that identity (no GUI session at install time, the user
+declined the one trust dialog) the app falls back to an ad-hoc signature and
+is preserved byte-for-byte on ordinary source updates so its identity does
+not churn. When the TCC identity does change (ad-hoc rebuild, or the one-time
+migration from ad-hoc to the certificate), macOS orphans every previously
+recorded grant — the old rows then read as silently DENIED for the "new" app
+and macOS never prompts again (BUG-083). After such a change this module
+resets the stale TCC rows for our bundle id via ``tccutil`` so the app can
+prompt fresh. Public binary distribution still requires the separate
+Developer-ID signing and notarization pipeline; this module never claims a
+locally signed app is a notarized artifact.
 """
 
 from __future__ import annotations
@@ -49,6 +54,7 @@ from jarvis.core.branding import (
     MACOS_EXECUTABLE_NAME,
 )
 from jarvis.core.process_utils import NO_WINDOW_CREATIONFLAGS
+from jarvis.setup.macos_signing_identity import ensure_local_signing_identity
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +73,11 @@ _TCC_SERVICES: tuple[str, ...] = (
     "Accessibility",
     "ListenEvent",
     "PostEvent",
+    # Automation consent for the Music/Spotify ducking scripts. It is keyed to
+    # our code requirement exactly like the rows above, so a stale row here
+    # made the Music prompt "come back" after every rebuild while never
+    # showing up in any permission view.
+    "AppleEvents",
 )
 _MACHO_MAGICS = frozenset(
     {
@@ -198,16 +209,51 @@ def _bundle_cdhash(bundle: Path) -> str | None:
     return match.group(1) if match else None
 
 
-def _tcc_reset_needed(previous_cdhash: str | None, current_cdhash: str | None) -> bool:
-    """A signature change (or an unknowable previous one) orphans TCC rows."""
-    return current_cdhash is not None and previous_cdhash != current_cdhash
+def _bundle_tcc_identity(bundle: Path) -> str | None:
+    """Return the bundle's designated requirement — what TCC pins grants to.
+
+    ``cdhash H"..."`` for an ad-hoc signature (a new one per rebuild) and
+    ``identifier "..." and certificate leaf = H"..."`` for a certificate
+    signature (the same one for every rebuild). ``None`` when unreadable.
+    """
+    if sys.platform != "darwin":
+        return None
+    try:
+        result = subprocess.run(
+            ["/usr/bin/codesign", "--display", "-r-", str(bundle)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+            creationflags=NO_WINDOW_CREATIONFLAGS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return _parse_designated_requirement(f"{result.stdout or ''}\n{result.stderr or ''}")
+
+
+def _parse_designated_requirement(text: str) -> str | None:
+    """Pull the ``designated => ...`` requirement out of ``codesign -r-`` output."""
+    match = re.search(r"^(?:#\s*)?designated\s*=>\s*(.+?)\s*$", text, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def _signed_with_certificate(bundle: Path) -> bool:
+    """Whether the bundle's TCC identity is certificate-bound (rebuild-proof)."""
+    identity = _bundle_tcc_identity(bundle)
+    return identity is not None and "certificate leaf" in identity
+
+
+def _tcc_reset_needed(previous_identity: str | None, current_identity: str | None) -> bool:
+    """An identity change (or an unknowable previous one) orphans TCC rows."""
+    return current_identity is not None and previous_identity != current_identity
 
 
 def _reset_stale_tcc_grants(runner=subprocess.run) -> None:
     """Drop this app's orphaned TCC rows so macOS can prompt fresh (BUG-083).
 
-    After a signature change the recorded grants belong to the OLD CDHash: the
-    rebuilt app reads them as DENIED and macOS suppresses every further prompt,
+    After an identity change the recorded grants belong to the OLD code
+    requirement: the app reads them as DENIED and macOS suppresses every prompt,
     so permissions appear "auto-rejected" without the user ever being asked.
     Resetting is scoped to our bundle id, is best-effort per service, and never
     raises — a failed reset leaves behavior no worse than before. The caller
@@ -246,23 +292,31 @@ def _rebuild_marker_path() -> Path:
     return user_data_dir() / _REBUILD_MARKER_FILENAME
 
 
-def _rebuild_fingerprint(bundle: Path, *, install_root: Path) -> dict[str, str | None]:
+def _rebuild_fingerprint(
+    bundle: Path, *, install_root: Path, identity: str | None = None
+) -> dict[str, str | None]:
     """Everything that decides whether a fresh build could come out different."""
     return {
         "cdhash": _bundle_cdhash(bundle),
         "install_root": str(install_root),
         "python": f"{sys.version_info.major}.{sys.version_info.minor}",
         "machine": platform.machine(),
+        # A signing identity that appeared since the last build is a reason to
+        # build again: the result carries a rebuild-proof TCC identity.
+        "identity": identity,
     }
 
 
-def _record_rebuild(bundle: Path, *, install_root: Path) -> None:
+def _record_rebuild(bundle: Path, *, install_root: Path, identity: str | None = None) -> None:
     """Note what this rebuild produced, so a repeat of it can be recognized."""
     marker = _rebuild_marker_path()
     try:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(
-            json.dumps(_rebuild_fingerprint(bundle, install_root=install_root), sort_keys=True),
+            json.dumps(
+                _rebuild_fingerprint(bundle, install_root=install_root, identity=identity),
+                sort_keys=True,
+            ),
             encoding="utf-8",
         )
     except OSError:
@@ -271,16 +325,17 @@ def _record_rebuild(bundle: Path, *, install_root: Path) -> None:
         log.debug("Could not record the macOS bundle rebuild fingerprint.", exc_info=True)
 
 
-def _rebuild_would_repeat(bundle: Path, *, install_root: Path) -> bool:
+def _rebuild_would_repeat(bundle: Path, *, install_root: Path, identity: str | None = None) -> bool:
     """Whether rebuilding now would reproduce the build that just failed a probe.
 
-    Same sources, same interpreter, same machine, and the bundle on disk is
-    still byte-identical to what the last rebuild signed: a fresh build can
-    only produce the same app and fail the same probe again. Doing it anyway
-    changes the ad-hoc signature, and macOS answers a changed signature by
-    orphaning every recorded TCC grant — the "I allow everything, restart, and
-    it asks again" loop (BUG-161). A launchable bundle is worth more than a
-    probe verdict that no rebuild can satisfy.
+    Same sources, same interpreter, same machine, same signing identity, and
+    the bundle on disk is still byte-identical to what the last rebuild
+    signed: a fresh build can only produce the same app and fail the same
+    probe again. Doing it anyway changes an ad-hoc signature, and macOS
+    answers a changed signature by orphaning every recorded TCC grant — the
+    "I allow everything, restart, and it asks again" loop (BUG-161). A
+    launchable bundle is worth more than a probe verdict that no rebuild can
+    satisfy.
     """
     try:
         recorded = json.loads(_rebuild_marker_path().read_text(encoding="utf-8"))
@@ -290,7 +345,7 @@ def _rebuild_would_repeat(bundle: Path, *, install_root: Path) -> bool:
         return False
     if not isinstance(recorded, dict):
         return False
-    current = _rebuild_fingerprint(bundle, install_root=install_root)
+    current = _rebuild_fingerprint(bundle, install_root=install_root, identity=identity)
     if current["cdhash"] is None:
         # Without a readable signature we cannot prove the bundle is the one
         # the last rebuild produced, so the guard must not suppress a repair.
@@ -381,23 +436,32 @@ _LSREGISTER = (
 
 
 def register_with_launch_services(bundle: Path) -> bool:
-    """Announce the bundle to LaunchServices so Spotlight can find it.
+    """Announce the bundle to LaunchServices AND Spotlight.
 
-    Writing the ``.app`` is only half the job. Spotlight, Launchpad and the
-    ``open -a`` name lookup all resolve through the LaunchServices database,
-    which is rebuilt from directory scans that are not immediate — a bundle
-    written into ``~/Applications`` is routinely unsearchable until the next
-    login. ``lsregister`` is the documented way to register one bundle right
-    away, and it is the macOS counterpart of the Windows Start-Menu shell
-    notification and the Linux ``update-desktop-database`` call: without it the
-    freshly installed app is on disk but absent from the user's search.
+    Writing the ``.app`` is only half the job. Launchpad and the ``open -a``
+    name lookup resolve through the LaunchServices database, which is rebuilt
+    from directory scans that are not immediate. ``lsregister`` registers one
+    bundle right away — the macOS counterpart of the Windows Start-Menu shell
+    notification and the Linux ``update-desktop-database`` call.
 
-    Best-effort and idempotent: re-registering an already-known bundle is a
-    no-op for LaunchServices. Returns ``True`` only when the tool ran cleanly;
-    a failure degrades to "appears after the next login", never to an error.
+    Spotlight is NOT that database: its search field answers from the per-volume
+    metadata store, so a bundle LaunchServices knows can still be missing from
+    Spotlight (the 2026-09-16 report). The bundle is therefore also imported
+    into Spotlight, which warns with the admin repair command when the volume's
+    index itself is broken (``macos_search_index``).
+
+    Best-effort and idempotent. Returns ``True`` only when ``lsregister`` ran
+    cleanly; a failure degrades to "appears after the next login", never to an
+    error.
     """
     if sys.platform != "darwin":
         return False
+    from jarvis.setup.macos_search_index import announce_to_spotlight
+
+    try:
+        announce_to_spotlight(bundle)
+    except Exception as exc:  # noqa: BLE001 - search registration is best-effort
+        log.debug("Spotlight import skipped: %s", exc)
     tool = Path(_LSREGISTER)
     if not tool.is_file():
         log.debug("lsregister not present; relying on the periodic rescan")
@@ -693,9 +757,11 @@ def _build_native_bundle(install_root: Path, work_dir: Path) -> Path:
     return bundle
 
 
-def _sign_bundle(bundle: Path) -> None:
+def _sign_bundle(bundle: Path, identity: str | None = None) -> None:
+    """Sign with the local identity (rebuild-proof TCC) or ad-hoc (``None``)."""
+    signer = identity or "-"
     result = subprocess.run(
-        ["/usr/bin/codesign", "--force", "--deep", "--sign", "-", str(bundle)],
+        ["/usr/bin/codesign", "--force", "--deep", "--sign", signer, str(bundle)],
         capture_output=True,
         text=True,
         timeout=60,
@@ -704,7 +770,8 @@ def _sign_bundle(bundle: Path) -> None:
     )
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "unknown codesign error").strip()
-        raise RuntimeError(f"ad-hoc code signing failed: {detail[-1200:]}")
+        kind = "ad-hoc" if identity is None else f"identity {identity}"
+        raise RuntimeError(f"code signing ({kind}) failed: {detail[-1200:]}")
     issue = _codesign_issue(bundle)
     if issue is not None:
         raise RuntimeError(
@@ -833,15 +900,17 @@ def _running_managed_bundle(
         return None
 
 
-def _install_native_bundle(install_root: Path, bundle: Path) -> Path:
+def _install_native_bundle(
+    install_root: Path, bundle: Path, *, identity: str | None = None
+) -> Path:
     """Build beside the destination and replace it atomically with rollback."""
     parent = bundle.parent
     parent.mkdir(parents=True, exist_ok=True)
-    previous_cdhash = _bundle_cdhash(bundle) if bundle.exists() else None
+    previous_identity = _bundle_tcc_identity(bundle) if bundle.exists() else None
     with tempfile.TemporaryDirectory(prefix=".jarvis-native-", dir=parent) as raw_work:
         work = Path(raw_work)
         built = _build_native_bundle(install_root, work)
-        _sign_bundle(built)
+        _sign_bundle(built, identity)
         previous = work / "previous.app"
         if bundle.exists() or bundle.is_symlink():
             bundle.rename(previous)
@@ -865,13 +934,50 @@ def _install_native_bundle(install_root: Path, bundle: Path) -> Path:
             if previous.exists() or previous.is_symlink():
                 previous.rename(bundle)
             raise
-    # The rebuild changed the app's TCC identity: every recorded grant is now
-    # orphaned and would read as silently DENIED (BUG-083).
-    _reset_or_explain(bundle, previous_cdhash)
+    # An ad-hoc rebuild changed the app's TCC identity: every recorded grant
+    # is now orphaned and would read as silently DENIED (BUG-083). With the
+    # certificate identity the requirement is unchanged and nothing is reset.
+    _reset_or_explain(bundle, previous_identity)
     return bundle
 
 
-def _reset_or_explain(bundle: Path, previous_cdhash: str | None) -> None:
+def _resign_bundle_in_place(bundle: Path, identity: str) -> Path:
+    """Move a healthy ad-hoc bundle onto the certificate identity.
+
+    Same files, new signature: a copy is signed beside the original and
+    swapped in atomically, so a running instance keeps its own (old) inode
+    and nothing is ever half-signed on disk. This is the ONE remaining
+    identity change the user pays for with a final round of re-granting —
+    after it, no rebuild can orphan a grant again.
+    """
+    parent = bundle.parent
+    previous_identity = _bundle_tcc_identity(bundle)
+    with tempfile.TemporaryDirectory(prefix=".jarvis-resign-", dir=parent) as raw_work:
+        work = Path(raw_work)
+        staged = work / bundle.name
+        shutil.copytree(bundle, staged, symlinks=True)
+        _sign_bundle(staged, identity)
+        if not _signed_with_certificate(staged):
+            raise RuntimeError("re-signing produced a bundle without a certificate identity")
+        previous = work / "previous.app"
+        bundle.rename(previous)
+        try:
+            staged.rename(bundle)
+            if not macos_app_bundle_is_launchable(bundle):
+                raise RuntimeError(
+                    "the re-signed macOS application bundle failed the launchable check"
+                )
+        except Exception:
+            _remove_path(bundle)
+            if previous.exists() or previous.is_symlink():
+                previous.rename(bundle)
+            raise
+    log.info("Moved the macOS app bundle onto the local signing identity: %s", bundle)
+    _reset_or_explain(bundle, previous_identity)
+    return bundle
+
+
+def _reset_or_explain(bundle: Path, previous_identity: str | None) -> None:
     """Reset the orphaned TCC rows once — never in a loop (BUG-159).
 
     A rebuild that keeps recurring (a failing identity probe, a churning
@@ -887,7 +993,7 @@ def _reset_or_explain(bundle: Path, previous_cdhash: str | None) -> None:
         record_identity_reset,
     )
 
-    if not _tcc_reset_needed(previous_cdhash, _bundle_cdhash(bundle)):
+    if not _tcc_reset_needed(previous_identity, _bundle_tcc_identity(bundle)):
         return
     if identity_reset_pending():
         log.warning(
@@ -908,12 +1014,16 @@ def ensure_macos_app_bundle(
     *,
     install_dir: Path | None = None,
     applications_dir: Path | None = None,
+    create_signing_identity: bool = False,
 ) -> Path | None:
     """Ensure ``~/Applications/Personal Jarvis.app`` has a stable identity.
 
     A valid existing bundle is preserved byte-for-byte so normal source
-    updates cannot churn its local TCC identity. Off macOS, this is a no-op
-    unless a caller explicitly injects an applications directory for tests.
+    updates cannot churn its local TCC identity. ``create_signing_identity``
+    allows the one password dialog that trusts a fresh per-user signing
+    certificate — only the installer passes it; the running app merely looks
+    the identity up. Off macOS, this is a no-op unless a caller explicitly
+    injects an applications directory for tests.
     """
     global _LAST_ERROR
     _LAST_ERROR = None
@@ -926,17 +1036,41 @@ def ensure_macos_app_bundle(
         install_root = (install_dir or _default_install_dir()).resolve()
         bundle = macos_app_bundle_path(applications_dir=applications_dir)
         diagnostics: list[str] = []
+        identity = (
+            ensure_local_signing_identity(create=create_signing_identity)
+            if sys.platform == "darwin"
+            else None
+        )
         # The app running right now IS the installed app — including when the
         # user keeps it in /Applications. Nothing to repair, and a rebuild
         # under our bundle id here would strip the grants of the very process
-        # asking the question (BUG-161).
+        # asking the question (BUG-161). The same goes for moving it onto the
+        # certificate identity: the reset that follows would hit this very
+        # process, so that migration waits for the installer.
         running = _running_managed_bundle(install_root=install_root, diagnostics=diagnostics)
         if running is not None:
             register_with_launch_services(running)
+            if identity is not None and not _signed_with_certificate(running):
+                log.info(
+                    "The running app is still ad-hoc signed; the next installer run "
+                    "moves it onto the local signing identity."
+                )
             return running
         launchable_issue = _launchable_issue(bundle) if bundle.exists() else "bundle not installed"
         if launchable_issue is None:
             if _runtime_identity_valid(bundle, install_root=install_root, diagnostics=diagnostics):
+                if identity is not None and not _signed_with_certificate(bundle):
+                    # Healthy but ad-hoc: same files, rebuild-proof signature.
+                    # One last round of re-granting, then never again.
+                    log.warning(
+                        "Re-signing the macOS app bundle with the local signing identity "
+                        "(this resets its macOS permissions one final time) [%s]",
+                        bundle,
+                    )
+                    resigned = _resign_bundle_in_place(bundle, identity)
+                    register_with_launch_services(resigned)
+                    _record_rebuild(resigned, install_root=install_root, identity=identity)
+                    return resigned
                 # A healthy bundle is kept byte-for-byte, but LaunchServices may
                 # still not know it — an interrupted earlier run, or a database
                 # rebuilt since. Re-registering is a no-op when it is known, and
@@ -944,7 +1078,7 @@ def ensure_macos_app_bundle(
                 register_with_launch_services(bundle)
                 return bundle
             launchable_issue = "; ".join(diagnostics) or "identity probe failed without detail"
-            if _rebuild_would_repeat(bundle, install_root=install_root):
+            if _rebuild_would_repeat(bundle, install_root=install_root, identity=identity):
                 # The last rebuild already produced exactly this bundle and the
                 # probe still refuses it. Building it again would only change
                 # the signature and cost the user every permission, so keep the
@@ -958,20 +1092,24 @@ def ensure_macos_app_bundle(
                 )
                 register_with_launch_services(bundle)
                 return bundle
-        # A rebuild is never routine: it changes the ad-hoc signature and macOS
-        # then discards every permission the user granted. Say why, at WARNING,
-        # so a recurring rebuild is visible in the log instead of showing up as
-        # "the app keeps forgetting my permissions".
+        # A rebuild is never routine: without the signing identity it changes
+        # the ad-hoc signature and macOS then discards every permission the
+        # user granted. Say why, at WARNING, so a recurring rebuild is visible
+        # in the log instead of showing up as "the app keeps forgetting my
+        # permissions".
         log.warning(
-            "Rebuilding the macOS app bundle (this resets its macOS permissions) — reason: %s [%s]",
+            "Rebuilding the macOS app bundle (%s) — reason: %s [%s]",
+            "permissions are kept: local signing identity"
+            if identity is not None
+            else "this resets its macOS permissions",
             launchable_issue,
             bundle,
         )
         if sys.platform != "darwin":
             return _write_cross_platform_fixture_bundle(bundle)
-        installed = _install_native_bundle(install_root, bundle)
+        installed = _install_native_bundle(install_root, bundle, identity=identity)
         register_with_launch_services(installed)
-        _record_rebuild(installed, install_root=install_root)
+        _record_rebuild(installed, install_root=install_root, identity=identity)
         log.info("Native macOS app bundle installed: %s", installed)
         return installed
     except Exception as exc:  # noqa: BLE001 - installer consumes the None result

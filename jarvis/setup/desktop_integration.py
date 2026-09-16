@@ -318,11 +318,15 @@ def ensure_desktop_integration(
     windows_aumid: str = WINDOWS_APP_USER_MODEL_ID,
     macos_applications_dir: Path | None = None,
     linux_applications_dir: Path | None = None,
+    macos_create_signing_identity: bool = False,
 ) -> DesktopIntegrationReport:
     """Install or repair the current platform's desktop-shell artifacts.
 
     Returns an ``attempted=False`` report on a frozen build: the native
     installer already registered the app and nothing here may touch it.
+    ``macos_create_signing_identity`` permits the one-time trust dialog for
+    the per-user signing certificate — the installer's call only, never the
+    app's background repair.
     """
 
     plat = _platform(platform)
@@ -410,6 +414,7 @@ def ensure_desktop_integration(
             bundle = macos_app_bundle.ensure_macos_app_bundle(
                 install_dir=root,
                 applications_dir=macos_applications_dir,
+                create_signing_identity=macos_create_signing_identity,
             )
             if bundle is not None:
                 artifacts.append("applications_bundle")
@@ -556,6 +561,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--remove", action="store_true")
     parser.add_argument("--allow-unmanaged", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--create-signing-identity",
+        action="store_true",
+        help="macOS: create and trust the per-user signing certificate (one password dialog)",
+    )
     args = parser.parse_args(argv)
 
     report = (
@@ -564,6 +574,7 @@ def main(argv: list[str] | None = None) -> int:
         else ensure_desktop_integration(
             install_dir=args.install_dir,
             require_managed=not args.allow_unmanaged,
+            macos_create_signing_identity=args.create_signing_identity,
         )
     )
     if args.json:

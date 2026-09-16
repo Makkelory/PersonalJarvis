@@ -565,16 +565,27 @@ def step_desktop_integration(*, enabled: bool, dry_run: bool) -> bool:
         return True
     result = None
     report = {}
+    argv = [
+        str(venv_python()),
+        "-m",
+        "jarvis.setup.desktop_integration",
+        "--install-dir",
+        str(repo_root()),
+        "--json",
+    ]
+    if sys.platform == "darwin":
+        # The per-user signing certificate keeps the app's macOS permissions
+        # across every future update. Trusting it is the one step macOS
+        # guards with a password dialog — say so before it appears.
+        argv.append("--create-signing-identity")
+        console.print(
+            "[muted]│    macOS may ask for your login password once: it trusts the "
+            f"local signing certificate that keeps {PRODUCT_NAME}'s permissions "
+            "across updates[/]"
+        )
     try:
         result = run_captured(
-            [
-                str(venv_python()),
-                "-m",
-                "jarvis.setup.desktop_integration",
-                "--install-dir",
-                str(repo_root()),
-                "--json",
-            ],
+            argv,
             cwd=repo_root(),
             label="registering the desktop app (a macOS first run can take a few minutes)",
             # py2app build + icon conversion + signing + LaunchServices import
