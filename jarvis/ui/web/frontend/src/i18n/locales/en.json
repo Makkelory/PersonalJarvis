@@ -2230,6 +2230,10 @@
         "title": "Input control",
         "description": "Required for Computer-Use to send mouse and keyboard events."
       },
+      "automation": {
+        "title": "Automation (Music & Spotify)",
+        "description": "Lets Jarvis turn Music and Spotify down while you dictate and back up afterwards. Asked once per player — a closed player is opened briefly in the background for the dialog."
+      },
       "credential_store": {
         "title": "Keychain (API keys)",
         "description": "Stores your API keys encrypted in the macOS Keychain instead of a plain file — that is the Keychain prompt you see when the app starts. Your keys stay on your Mac and are never sent anywhere."
@@ -2247,6 +2251,7 @@
       "computer_use": "Computer-Use",
       "global_hotkeys": "Global shortcuts",
       "window_control": "Window control",
+      "audio_ducking": "Music ducking while dictating",
       "api_keys": "Secure API-key storage"
     },
     "restart_deferred": "Newly granted access turns on with the automatic restart at the end of setup - nothing to do now.",

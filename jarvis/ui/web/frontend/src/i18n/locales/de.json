@@ -2197,6 +2197,10 @@
         "title": "Eingabesteuerung",
         "description": "Erforderlich, damit Computer-Use Maus- und Tastaturereignisse senden kann."
       },
+      "automation": {
+        "title": "Automation (Musik & Spotify)",
+        "description": "Erlaubt Jarvis, Musik und Spotify beim Diktieren leiser zu stellen und danach wieder lauter. Wird einmal pro Player gefragt — ein geschlossener Player wird für den Dialog kurz im Hintergrund geöffnet."
+      },
       "credential_store": {
         "title": "Schlüsselbund (API-Keys)",
         "description": "Speichert deine API-Keys verschlüsselt im macOS-Schlüsselbund statt in einer Klartextdatei — genau dafür fragt macOS beim Start der App. Deine Keys bleiben auf deinem Mac und werden nirgendwohin gesendet."
@@ -2214,6 +2218,7 @@
       "computer_use": "Computer-Use",
       "global_hotkeys": "Globale Kurzbefehle",
       "window_control": "Fenstersteuerung",
+      "audio_ducking": "Musik leiser beim Diktieren",
       "api_keys": "Sichere API-Key-Ablage"
     },
     "restart_deferred": "Neu erteilte Freigaben werden mit dem automatischen Neustart am Ende der Einrichtung aktiv - jetzt ist nichts zu tun.",

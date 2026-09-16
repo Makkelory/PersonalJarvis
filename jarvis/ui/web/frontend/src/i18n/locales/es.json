@@ -2197,6 +2197,10 @@
         "title": "Control de entrada",
         "description": "Necesario para que Computer-Use envíe eventos de ratón y teclado."
       },
+      "automation": {
+        "title": "Automatización (Música y Spotify)",
+        "description": "Permite a Jarvis bajar el volumen de Música y Spotify mientras dictas y subirlo después. Se pregunta una vez por reproductor; un reproductor cerrado se abre brevemente en segundo plano para el diálogo."
+      },
       "credential_store": {
         "title": "Llavero (claves API)",
         "description": "Guarda tus claves API cifradas en el Llavero de macOS en lugar de un archivo de texto plano — ese es el aviso del Llavero que ves al iniciar la app. Tus claves se quedan en tu Mac y nunca se envían a ningún sitio."
@@ -2214,6 +2218,7 @@
       "computer_use": "Computer-Use",
       "global_hotkeys": "Atajos globales",
       "window_control": "Control de ventanas",
+      "audio_ducking": "Bajar la música al dictar",
       "api_keys": "Almacenamiento seguro de claves API"
     },
     "restart_deferred": "Los permisos recién concedidos se activan con el reinicio automático al final de la configuración; no hay nada que hacer ahora.",

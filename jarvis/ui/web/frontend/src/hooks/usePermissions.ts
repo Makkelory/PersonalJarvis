@@ -8,6 +8,7 @@ export type PermissionId =
   | "accessibility"
   | "input_monitoring"
   | "event_posting"
+  | "automation"
   | "credential_store";
 
 export type PermissionState =
