@@ -317,9 +317,10 @@ succeeded while its announcement did not.
 **Fix pass 2026-09-16 (macOS: registered is not searchable, BUG-216).**
 LaunchServices and Spotlight are separate indexes; `lsregister` alone left the
 bundle out of Spotlight search. macOS now also imports the bundle with
-`mdimport` and checks the volume's Spotlight store (`mdutil -s` on the mount
-point), logging the admin repair command when the store is disabled or broken;
-`--doctor` reports the same as `macos-spotlight`. Windows and Linux are
+`mdimport` and checks the indexing switch of the volume that controls it (`/`
+for the APFS data volume), logging the admin repair command when indexing is
+off; `--doctor` (`macos-spotlight`) additionally detects a stalled index by an
+import that never appears. Windows and Linux are
 unchanged — their index announcements already feed the search the user types
 into.
 

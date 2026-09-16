@@ -301,16 +301,20 @@ def check_macos_spotlight() -> list[DoctorFinding]:
     """Whether Spotlight can actually find the installed macOS app.
 
     LaunchServices registration does not put an app into Spotlight's search
-    (2026-09-16 report): the search field answers from the per-volume metadata
-    store, which can be broken machine-wide. Report the store state and whether
-    the bundle is really indexed, with the command that fixes each.
+    (BUG-216): the search field answers from the metadata store, which can be
+    switched off or stalled machine-wide. Judged only on what macOS shows — the
+    volume's indexing switch, and whether a requested import ever appears.
     """
     import sys as _sys
 
     if _sys.platform != "darwin":
         return []
     from jarvis.setup.macos_app_bundle import macos_app_bundle_path
-    from jarvis.setup.macos_search_index import indexed_bundle_paths, spotlight_volume_issue
+    from jarvis.setup.macos_search_index import (
+        STALLED_INDEX_REPAIR_COMMAND,
+        spotlight_volume_issue,
+        wait_until_indexed,
+    )
 
     bundle = macos_app_bundle_path()
     if not bundle.exists():
@@ -319,11 +323,10 @@ def check_macos_spotlight() -> list[DoctorFinding]:
     if issue is not None:
         return [DoctorFinding(
             "macos-spotlight", "warn",
-            f"Spotlight cannot index {bundle.name}: {issue.reason} on {issue.volume} "
-            "— no new file on this volume becomes searchable",
+            f"Spotlight cannot find {bundle.name}: {issue.reason} on {issue.volume}",
             hint=f"{issue.repair_command}  (admin password; reindexing takes a while)",
         )]
-    indexed = indexed_bundle_paths()
+    indexed = wait_until_indexed(bundle)
     if indexed is None:
         return [DoctorFinding(
             "macos-spotlight", "info", "Spotlight could not be queried for the app bundle",
@@ -331,12 +334,13 @@ def check_macos_spotlight() -> list[DoctorFinding]:
     if not indexed:
         return [DoctorFinding(
             "macos-spotlight", "warn",
-            f"{bundle.name} is installed but not in the Spotlight index",
-            hint=f'mdimport "{bundle}"',
+            f"{bundle.name} is installed, but Spotlight did not index it after an "
+            "import request — the Spotlight index looks stalled, so other newly "
+            "installed apps are missing from search too",
+            hint=f"{STALLED_INDEX_REPAIR_COMMAND}  (admin password; rebuilds the whole "
+                 "index, which can take hours)",
         )]
-    return [DoctorFinding(
-        "macos-spotlight", "ok", f"Spotlight finds {bundle.name} ({indexed[0]})",
-    )]
+    return [DoctorFinding("macos-spotlight", "ok", f"Spotlight finds {bundle.name}")]
 
 
 def run_doctor(config: Any) -> list[DoctorFinding]:

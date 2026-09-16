@@ -15243,31 +15243,40 @@ nothing.
    The bundle is built in a hidden `.jarvis-native-*` directory and renamed into
    place, and nothing ever asked Spotlight to import it. The docstring claiming
    "announce to LaunchServices so Spotlight can find it" was simply wrong.
-2. *Machine.* On the reporting Mac the Data volume's Spotlight store itself was
-   broken: `mdutil -s /System/Volumes/Data` answered "Error: unknown indexing
-   state", and `mdfind` returned no item changed in the preceding four days.
-   Freshly created test apps and plain text files in `~/Applications`,
-   `~/Downloads` and `~/Desktop` stayed unindexed for minutes, with and without
-   `mdimport`. On such a volume nothing new becomes searchable, whichever app
-   wrote it, and only an administrator can re-enable the store.
+2. *Machine.* On the reporting Mac (macOS 15.7) the Spotlight index had
+   stalled: `mdutil -s /` said "Indexing enabled", yet `mdfind` returned no
+   item changed in the preceding four days. Every app installed or updated
+   since 2026-09-12 (Excel, PowerPoint, Claude, Personal Jarvis) was missing
+   from search while older apps were found, and freshly created files stayed
+   unindexed even after `mdimport`. No app can repair that; the index has to
+   be rebuilt with `sudo mdutil -E /`.
 
 **Fix.** `jarvis/setup/macos_search_index.py`: every install/repair path already
 calls `register_with_launch_services`, which now also runs `mdimport` on the
-bundle and checks the volume with `df -P` + `mdutil -s <mount point>`. A
-disabled or broken store logs a WARNING carrying the exact repair command
-(`sudo mdutil -i on <vol> && sudo mdutil -E <vol>`). `python -m jarvis --doctor`
-gained `macos-spotlight`: store broken → warn + repair command; bundle not in
-the index → warn + `mdimport`; indexed → ok. `mdutil -s` must be given the mount
-point — handed the bundle path it echoes that path back as the "volume", which
-the live probe caught before it shipped.
+bundle and checks the indexing switch of the volume holding it (`df -P`, then
+`mdutil -s`). Indexing switched off logs a WARNING with the exact repair
+command. `python -m jarvis --doctor` gained `macos-spotlight`: indexing off →
+warn + `mdutil -i on`; import requested and the bundle still not listed after
+20 s → warn "index looks stalled" + `sudo mdutil -E /`; indexed → ok.
+
+Two traps found live on the way, both pinned by tests:
+- `mdutil -s <folder>` echoes the folder back as the "volume", so it must be
+  given a mount point.
+- `/System/Volumes/Data` answers "unknown indexing state" and refuses
+  `mdutil -i` with error -405 on a HEALTHY Mac: the APFS system volume group is
+  indexed and administered through `/`. The first version of the check read
+  that answer as a broken store and would have warned on every Mac; it now
+  asks `/` and judges a stall only by an import that never appears.
 
 **Class rule.** "Registered" is not "searchable": verify against the index the
-user's search box actually reads, and when the OS index itself is broken say so
-with the command that fixes it instead of claiming the app is findable.
+user's search box actually reads, judge the OS index only on behaviour macOS
+shows, and when that index is broken say so with the command that fixes it
+instead of claiming the app is findable.
 
-**Guards.** `tests/unit/setup/test_macos_search_index.py` (verbatim broken-store
-`mdutil` output, mount-point resolution, import on registration, a Spotlight
-crash never blocks `lsregister`), `tests/unit/diagnostics/test_doctor_diagnostics.py`
+**Guards.** `tests/unit/setup/test_macos_search_index.py` (verbatim data-volume
+`mdutil` output never counts as a defect, control-volume and mount-point
+resolution, stalled-index wait, import on registration, a Spotlight crash never
+blocks `lsregister`), `tests/unit/diagnostics/test_doctor_diagnostics.py`
 (`check_macos_spotlight`).
 
 ## BUG-217: macOS asked for every permission again after each rebuild, and the Music prompt never stuck (HIGH, FIXED 2026-09-16)

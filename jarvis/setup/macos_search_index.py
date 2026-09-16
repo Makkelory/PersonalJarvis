@@ -8,10 +8,17 @@ The bundle is built in a hidden ``.jarvis-native-*`` directory and renamed
 into ``~/Applications``, and that import is left to the FSEvents stream; this
 module asks for it explicitly with ``mdimport``.
 
-It also names the case no app can repair: a volume whose Spotlight store is
-disabled or broken (``mdutil -s`` answers "unknown indexing state") indexes
-nothing new at all, so the only honest result is the exact admin command that
-re-enables the store. Every probe is bounded, macOS-only and never raises.
+It also names the cases no app can repair, each only on evidence macOS gives:
+indexing switched off for the volume (``mdutil -s``), or a stalled index that
+accepts an import request and still never lists the bundle
+(``wait_until_indexed``). Both come with the exact admin command. Every probe
+is bounded, macOS-only and never raises.
+
+``mdutil`` is asked about the volume that CONTROLS indexing. Since macOS 10.15
+the user data lives on ``/System/Volumes/Data``, firmlinked under ``/``; that
+volume answers ``mdutil -s`` with "unknown indexing state" and refuses
+``mdutil -i`` with error -405 even on a healthy Mac, because the system volume
+group is indexed and administered through ``/``.
 """
 
 from __future__ import annotations
@@ -19,6 +26,8 @@ from __future__ import annotations
 import logging
 import subprocess
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,6 +41,8 @@ _MDUTIL = "/usr/bin/mdutil"
 _MDFIND = "/usr/bin/mdfind"
 _DF = "/bin/df"
 _TIMEOUT_S = 30
+# The data half of the APFS system volume group; indexing is controlled at "/".
+_SYSTEM_DATA_VOLUME = "/System/Volumes/Data"
 
 
 @dataclass(frozen=True)
@@ -44,6 +55,11 @@ class SpotlightVolumeIssue:
     @property
     def repair_command(self) -> str:
         return f"sudo mdutil -i on {self.volume} && sudo mdutil -E {self.volume}"
+
+
+# A stalled index reports "Indexing enabled" and simply stops absorbing
+# changes; erasing the store makes mds rebuild it from scratch.
+STALLED_INDEX_REPAIR_COMMAND = "sudo mdutil -E /"
 
 
 def _run(argv: list[str]) -> subprocess.CompletedProcess[str] | None:
@@ -101,10 +117,8 @@ def parse_mdutil_status(output: str) -> SpotlightVolumeIssue | None:
             return None
         if "indexing disabled" in lowered:
             return SpotlightVolumeIssue(volume or "/", "Spotlight indexing is turned off")
-        if "unknown indexing state" in lowered:
-            return SpotlightVolumeIssue(
-                volume or "/", "the Spotlight index is not working (unknown indexing state)"
-            )
+    # "unknown indexing state" is what a healthy /System/Volumes/Data answers
+    # too, so it proves nothing on its own.
     return None
 
 
@@ -119,6 +133,11 @@ def parse_df_mount_point(output: str) -> str | None:
     return fields[5].strip() if len(fields) == 6 else None
 
 
+def indexing_control_volume(mount_point: str) -> str:
+    """The volume whose ``mdutil`` state governs ``mount_point``."""
+    return "/" if mount_point == _SYSTEM_DATA_VOLUME else mount_point
+
+
 def _mount_point(path: Path) -> str | None:
     result = _run([_DF, "-P", str(path)])
     if result is None or result.returncode != 0:
@@ -129,12 +148,13 @@ def _mount_point(path: Path) -> str | None:
 def spotlight_volume_issue(path: Path) -> SpotlightVolumeIssue | None:
     """Whether the volume holding ``path`` can index new items at all.
 
-    ``mdutil -s`` must be given the mount point: handed any other path it
-    echoes that path back, and the repair command would then name a folder.
+    ``mdutil -s`` must be given a mount point: handed any other path it echoes
+    that path back, and the repair command would then name a folder.
     """
-    volume = _mount_point(path)
-    if volume is None:
+    mount = _mount_point(path)
+    if mount is None:
         return None
+    volume = indexing_control_volume(mount)
     result = _run([_MDUTIL, "-s", volume])
     if result is None:
         return None
@@ -154,6 +174,34 @@ def indexed_bundle_paths(bundle_id: str = MACOS_BUNDLE_ID) -> list[Path] | None:
         # the user's search shows.
         and not any(part.startswith(".") for part in Path(line.strip()).parts)
     ]
+
+
+def wait_until_indexed(
+    bundle: Path,
+    *,
+    timeout_s: float = 20.0,
+    poll_s: float = 2.0,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> bool | None:
+    """Request an import of ``bundle`` and wait for Spotlight to list it.
+
+    ``True`` once it is indexed, ``False`` when Spotlight accepted the request
+    and still did not list the bundle in time — the observable shape of a
+    stalled index — and ``None`` when Spotlight could not be asked at all.
+    """
+    if not request_spotlight_import(bundle):
+        return None
+    deadline = clock() + timeout_s
+    while True:
+        indexed = indexed_bundle_paths()
+        if indexed is None:
+            return None
+        if bundle in indexed:
+            return True
+        if clock() >= deadline:
+            return False
+        sleep(poll_s)
 
 
 def announce_to_spotlight(bundle: Path) -> bool:
@@ -176,11 +224,14 @@ def announce_to_spotlight(bundle: Path) -> bool:
 
 
 __all__ = [
+    "STALLED_INDEX_REPAIR_COMMAND",
     "SpotlightVolumeIssue",
     "announce_to_spotlight",
     "indexed_bundle_paths",
+    "indexing_control_volume",
     "parse_df_mount_point",
     "parse_mdutil_status",
     "request_spotlight_import",
     "spotlight_volume_issue",
+    "wait_until_indexed",
 ]
