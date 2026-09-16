@@ -293,7 +293,8 @@ def _default_automation_probe(bundle_id: str, ask: bool) -> int | None:
             ctypes.c_ubyte,
         ]
         determine.restype = ctypes.c_int32
-    except (OSError, AttributeError):
+    except (OSError, AttributeError) as exc:
+        log.debug("Apple Event Manager is unavailable for the Automation probe: %s", exc)
         return None
     target = _AEDesc()
     data = bundle_id.encode("utf-8")
@@ -764,6 +765,8 @@ class SystemPermissionPort:
                 try:
                     state = PermissionState(recorded[bundle_id])
                 except (KeyError, ValueError):
+                    # Nothing recorded for this player (or an unknown value
+                    # from a newer build): "not asked yet" is the honest read.
                     state = PermissionState.NOT_DETERMINED
             elif state in _CONSENT_ANSWERS:
                 updated[bundle_id] = state.value

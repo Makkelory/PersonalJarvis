@@ -227,7 +227,8 @@ def _bundle_tcc_identity(bundle: Path) -> str | None:
             check=False,
             creationflags=NO_WINDOW_CREATIONFLAGS,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log.debug("codesign could not read the designated requirement of %s: %s", bundle, exc)
         return None
     return _parse_designated_requirement(f"{result.stdout or ''}\n{result.stderr or ''}")
 

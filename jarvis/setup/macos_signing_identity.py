@@ -93,7 +93,8 @@ def _gui_session(runner: Runner) -> bool:
     """Only an Aqua session can show the trust-settings password dialog."""
     try:
         result = _run(runner, ["/bin/launchctl", "managername"], timeout=10)
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log.debug("launchctl managername did not answer; assuming no GUI session: %s", exc)
         return False
     return (result.stdout or "").strip() == "Aqua"
 
@@ -101,7 +102,8 @@ def _gui_session(runner: Runner) -> bool:
 def _login_keychain(runner: Runner) -> str | None:
     try:
         result = _run(runner, [_SECURITY, "default-keychain", "-d", "user"], timeout=10)
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log.debug("security default-keychain did not answer: %s", exc)
         return None
     path = (result.stdout or "").strip().strip('"')
     return path or None
@@ -196,6 +198,8 @@ def create_local_signing_identity(runner: Runner = subprocess.run) -> str | None
                 stream.write(p12)
             cert_path.write_bytes(cert_pem)
         except OSError as exc:
+            # Reported through last_error(): the caller logs it with the
+            # consequence (ad-hoc signing) once, instead of twice here.
             _LAST_ERROR = f"could not stage the identity: {exc}"
             return None
         steps: list[tuple[str, list[str], float]] = [
@@ -226,6 +230,8 @@ def create_local_signing_identity(runner: Runner = subprocess.run) -> str | None
             try:
                 result = _run(runner, argv, timeout=timeout)
             except (OSError, subprocess.TimeoutExpired) as exc:
+                # Reported through last_error() by the caller, with the
+                # consequence (the app stays ad-hoc signed) spelled out.
                 _LAST_ERROR = f"security {name} did not complete: {exc}"
                 return None
             if result.returncode != 0:
