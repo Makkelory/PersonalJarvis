@@ -49,8 +49,8 @@ from jarvis.tasks.schema import (
     TriggerEvery,
 )
 
-Locale = Literal["en", "de", "es"]
-LOCALES: tuple[Locale, ...] = ("en", "de", "es")
+Locale = Literal["en", "de", "es", "ru"]
+LOCALES: tuple[Locale, ...] = ("en", "de", "es", "ru")
 
 TemplateCategory = Literal["news", "productivity", "finance", "research", "developer"]
 #: Display order of the catalogue sections (the UI groups cards by this).
@@ -68,12 +68,18 @@ TEMPLATE_TAG_PREFIX = "template:"
 
 
 class LocalizedText(BaseModel):
-    """A short UI string in the three product locales (``en`` is mandatory)."""
+    """A short UI string in the product locales (``en`` is mandatory).
+
+    ``ru`` defaults to "" like ``de``/``es`` — a template that hasn't been
+    translated yet simply falls back to English via :meth:`for_locale`
+    rather than failing validation.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     en: str = Field(min_length=1, max_length=512)
     de: str = Field(default="", max_length=512)
     es: str = Field(default="", max_length=512)
+    ru: str = Field(default="", max_length=512)
 
     def for_locale(self, locale: str) -> str:
         return getattr(self, locale, "") or self.en
