@@ -3090,13 +3090,18 @@
       "es": {
         "label": "Español",
         "description": "Español para cada etiqueta y botón."
+      },
+      "ru": {
+        "label": "Русский (ruso)",
+        "description": "Ruso para cada etiqueta y botón."
       }
     },
     "reply_options": {
       "auto": "{name} refleja el idioma que hables o escribas.",
       "en": "{name} responde en inglés.",
       "de": "{name} responde en alemán.",
-      "es": "{name} responde en español."
+      "es": "{name} responde en español.",
+      "ru": "{name} responde en ruso."
     },
     "stt_options": {
       "auto": "Detecta automáticamente el idioma que hablas.",
