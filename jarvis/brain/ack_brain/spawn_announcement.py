@@ -250,6 +250,17 @@ _FALLBACK_SPAWN: dict[str, tuple[str, ...]] = {
         "He puesto un {agent} con este tema más grande; volverá con algo sólido.",
         "Un {agent} ya trabaja en ello. Hay más detrás, así que tardará un momentito.",
     ),
+    "ru": (
+        "Сделаю. Для этого я запустил {agent} — более крупная задача теперь "
+        "выполняется в фоне.",
+        "Понял. {agent} внимательно этим занимается, это может занять момент.",
+        "Хорошо, тут нужно копнуть глубже. {agent} уже работает над этим в фоне.",
+        "{agent} берёт это на себя. Задача посерьёзнее, так что нужен момент.",
+        "Принято. {agent} взял на себя эту более объёмную задачу.",
+        "Конечно. {agent} уже разбирается с этим; сделать это правильно займёт немного времени.",
+        "Я поставил {agent} на эту более крупную задачу. Он вернётся с чем-то основательным.",
+        "{agent} уже работает над этим. Тут есть над чем поработать, так что это займёт момент.",
+    ),
 }
 
 _FALLBACK_ALREADY_RUNNING: dict[str, tuple[str, ...]] = {
@@ -270,6 +281,12 @@ _FALLBACK_ALREADY_RUNNING: dict[str, tuple[str, ...]] = {
         "El {agent} ya tiene esa tarea, un momento.",
         "Un {agent} sigue trabajando en ello, casi está.",
         "Paciencia, esa tarea ya está con un {agent}.",
+    ),
+    "ru": (
+        "{agent} уже занимается этим, работа ещё идёт.",
+        "{agent} уже взял эту задачу, один момент.",
+        "{agent} всё ещё работает над этим, почти готово.",
+        "Терпение, эта задача уже у {agent}.",
     ),
 }
 
@@ -307,6 +324,13 @@ STILL_RUNNING_PHRASES: dict[str, tuple[str, ...]] = {
         "Aún no he terminado: prefiero darte algo en condiciones que algo a medias.",
         "Todavía trabajando en ello. Vuelvo contigo enseguida.",
         "Ya casi; estoy juntando las piezas para ti.",
+    ),
+    "ru": (
+        "Всё ещё занимаюсь более крупной задачей. Скоро у меня будет что-то основательное для тебя.",
+        "Это займёт ещё немного; я продолжаю работать над этим в фоне.",
+        "Ещё не закончил: лучше дам тебе что-то стоящее, чем что-то недоделанное.",
+        "Всё ещё работаю над этим. Скоро вернусь с ответом.",
+        "Почти готово, собираю всё воедино для тебя.",
     ),
 }
 
@@ -379,8 +403,10 @@ def _resolve_language(explicit: str | None, utterance: str) -> str:
             return "es"
         if low.startswith("de"):
             return "de"
+        if low.startswith("ru"):
+            return "ru"
     detected = detect_text_language(utterance or "")
-    return detected if detected in ("de", "en", "es") else DEFAULT_LOCALE
+    return detected if detected in ("de", "en", "es", "ru") else DEFAULT_LOCALE
 
 
 def _trim_to_sentences(text: str, max_words: int) -> str | None:
