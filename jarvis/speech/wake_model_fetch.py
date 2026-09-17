@@ -55,6 +55,12 @@ VOSK_MODELS: dict[str, VoskModelSpec] = {
         "vosk-model-small-es-0.42.zip",
         "09b239888f633ef2f0b4e09736e3d9936acfd810bc65d53fad45261762c6511f",
     ),
+    # Hash intentionally empty (see the module docstring's documented fallback:
+    # "empty hash is treated as 'not yet pinned' and accepted unverified") —
+    # this sandbox has no network path to alphacephei.com to compute the real
+    # SHA-256. Whoever first downloads this model for real should pin it here,
+    # the same way the de/en/es hashes were pinned on 2026-07-08.
+    "ru": VoskModelSpec("vosk-model-small-ru-0.22.zip", ""),
 }
 
 
