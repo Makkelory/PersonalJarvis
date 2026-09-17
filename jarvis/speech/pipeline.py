@@ -431,6 +431,10 @@ _BRAIN_UNAVAILABLE_PHRASE: dict[str, str] = {
         "Lo siento, Ruben — ahora mismo no puedo acceder a ninguno de mis "
         "modelos de lenguaje. Comprueba si tus proveedores aún tienen crédito."
     ),
+    "ru": (
+        "Извини, Рубен — сейчас я не могу связаться ни с одной из моих "
+        "языковых моделей. Пожалуйста, проверь, есть ли ещё баланс у провайдеров."
+    ),
 }
 
 # AD-OE6 zero-silent-drop fallback for the *final* utterance STT. A cloud STT
@@ -446,6 +450,7 @@ _STT_UNAVAILABLE_PHRASE: dict[str, str] = {
     ),
     "en": "Sorry, I didn't catch that just now. Could you say it again?",
     "es": "Perdona, no te he entendido bien ahora mismo. ¿Puedes repetirlo, por favor?",
+    "ru": "Извини, я сейчас не расслышал тебя. Скажи, пожалуйста, ещё раз.",
 }
 
 # Honest cross-family fallback when a requested duplex provider cannot open a
@@ -464,6 +469,10 @@ _REALTIME_UNAVAILABLE_PHRASE: dict[str, str] = {
     "es": (
         "La conexión en tiempo real no está disponible ahora mismo. "
         "Cambiaré esta sesión al sistema de voz clásico."
+    ),
+    "ru": (
+        "Realtime-соединение сейчас недоступно. "
+        "Я переключаю эту сессию на классическую голосовую обработку."
     ),
 }
 
@@ -496,12 +505,14 @@ _TIMEOUT_TOOL_STALL_PHRASE: dict[str, str] = {
     ),
     "en": "I couldn't get an answer in time. A tool I was waiting on didn't respond.",
     "es": "No pude obtener una respuesta a tiempo. Una herramienta que esperaba no respondió.",
+    "ru": "Я не успел получить ответ вовремя. Инструмент, которого я ждал, не откликнулся.",
 }
 
 _TIMEOUT_NO_ANSWER_PHRASE: dict[str, str] = {
     "de": "Das konnte ich gerade nicht herausfinden.",
     "en": "I couldn't find that out just now.",
     "es": "No pude averiguar eso ahora mismo.",
+    "ru": "Сейчас я не смог это выяснить.",
 }
 
 # AD-OE6 zero-silent-drop fallback for an ABANDONED incomplete utterance. When
@@ -516,6 +527,7 @@ _CLARIFY_QUESTION_PHRASE: dict[str, str] = {
     "de": "Wie meinst du das genau?",
     "en": "What do you mean exactly?",
     "es": "¿Qué quieres decir exactamente?",
+    "ru": "Что именно ты имеешь в виду?",
 }
 
 # AD-OE6 confirmation for a SUCCESSFUL wordless desktop-action turn. When the
@@ -532,10 +544,11 @@ _ACTION_DONE_PHRASE: dict[str, str] = {
     "de": "Erledigt.",
     "en": "Done.",
     "es": "Listo.",
+    "ru": "Готово.",
 }
 
 
-_PHRASE_LANGS: frozenset[str] = frozenset({"de", "en", "es"})
+_PHRASE_LANGS: frozenset[str] = frozenset({"de", "en", "es", "ru"})
 
 
 def _phrase_lang(lang: str | None) -> str:
@@ -1887,11 +1900,16 @@ def _smalltalk_fallback_for_non_substantive(prompt: str, lang: str) -> str | Non
         "wie geht",
         "how are you",
         "how's it going",
+        "как дела",
+        "как ты",
     )
     if not any(marker in low for marker in wellbeing_markers):
         return None
-    if _phrase_lang(lang) == "de":
+    resolved = _phrase_lang(lang)
+    if resolved == "de":
         return "Mir geht's gut, Ruben. Was machen wir als Naechstes?"
+    if resolved == "ru":
+        return "У меня всё хорошо, Рубен. Что делаем дальше?"
     return "I'm good, Ruben. What's next?"
 
 
@@ -1901,7 +1919,8 @@ _INCOMPLETE_TAIL_RE = re.compile(
     r"und|oder|aber|sondern|mit|ohne|für|fuer|von|zu|zur|zum|auf|in|im|am|an|"
     r"der|die|das|den|dem|des|ein|eine|einen|einem|einer|"
     r"if|whether|because|that|so|before|after|although|while|and|or|but|with|"
-    r"without|for|from|to|into|on|in|at|the|a|an"
+    r"without|for|from|to|into|on|in|at|the|a|an|"
+    r"если|хотя|потому\s+что|чтобы|когда|пока|и|или|но|с|для|от|до|по|на|в|у"
     r")\s*$",
     re.IGNORECASE,
 )
@@ -1939,6 +1958,8 @@ def _looks_context_incomplete(text: str) -> bool:
         "if ",
         "when ",
         "ob du ",
+        "джарвис если ",
+        "если ",
     )
     return any(low == marker.strip() or low.endswith(marker) for marker in incomplete_starters)
 
@@ -4797,6 +4818,10 @@ class SpeechPipeline:
             "en": (
                 "[scheduled run] It is time for the '{name}' skill. Execute its "
                 "instructions now and report the result briefly."
+            ),
+            "ru": (  # i18n-allow
+                "[Запланированный запуск] Пора выполнить навык '{name}'. Выполни "  # i18n-allow
+                "сейчас его инструкции и кратко сообщи результат."  # i18n-allow
             ),
         }
         reply = await self._brain(
@@ -16019,8 +16044,8 @@ class SpeechPipeline:
                 # These are *runtime* bilingual output strings (not artifacts),
                 # so they stay bilingual per the voice-output policy.
                 spoken_phrases: dict[str, dict[str, str]] = {
-                    "incomplete": {"de": "Mhm?", "en": "Mhm?"},
-                    "abort": {"de": "Okay.", "en": "Okay."},
+                    "incomplete": {"de": "Mhm?", "en": "Mhm?", "ru": "Мгм?"},
+                    "abort": {"de": "Okay.", "en": "Okay.", "ru": "Окей."},
                 }
                 lang_key = _phrase_lang(lang)
                 phrase = spoken_phrases.get(kind, {}).get(lang_key, "Mhm?")
@@ -17356,9 +17381,15 @@ class SpeechPipeline:
             "fail": "Eso no funcionó. {e}",
             "unknown_err": "error desconocido",
         },
+        "ru": {
+            "done": "Готово.",
+            "done_summ": "Готово. {s}",
+            "fail": "Это не сработало. {e}",
+            "unknown_err": "неизвестная ошибка",
+        },
     }
 
-    _BCP47: dict[str, str] = {"de": "de-DE", "en": "en-US", "es": "es-ES"}
+    _BCP47: dict[str, str] = {"de": "de-DE", "en": "en-US", "es": "es-ES", "ru": "ru-RU"}
 
     @classmethod
     def _bcp47(cls, lang: object) -> str | None:

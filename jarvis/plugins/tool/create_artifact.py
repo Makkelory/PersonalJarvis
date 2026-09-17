@@ -147,7 +147,7 @@ class CreateArtifactTool:
             },
             "language": {
                 "type": "string",
-                "enum": ["de", "en", "es"],
+                "enum": ["de", "en", "es", "ru"],
                 "description": "Language the user is speaking (fallback only).",
             },
             "spoken_ack": {

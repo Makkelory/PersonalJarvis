@@ -52,7 +52,7 @@ from jarvis.brain.turn_planner import TurnPlan, TurnReason, is_lookup_shape
 
 log = logging.getLogger(__name__)
 
-_SUPPORTED_LANGUAGES = ("de", "en", "es")
+_SUPPORTED_LANGUAGES = ("de", "en", "es", "ru")
 _DEFAULT_LANGUAGE = "en"
 
 #: Grace window for SHORT work: speak only if the turn is still running
@@ -167,6 +167,12 @@ _POOLS: dict[WorkClass, dict[str, tuple[str, ...]]] = {
             "Estoy buscando información actual.",
             "Una búsqueda rápida, un momento.",
         ),
+        "ru": (  # i18n-allow: localized runtime voice output
+            "Ищу это в интернете.",  # i18n-allow
+            "Секунду, проверяю онлайн.",  # i18n-allow
+            "Сейчас найду свежую информацию по этому.",  # i18n-allow
+            "Быстрый поиск в интернете, один момент.",  # i18n-allow
+        ),
     },
     WorkClass.PERSONAL: {
         "de": (  # i18n-allow: localized runtime voice output
@@ -187,6 +193,12 @@ _POOLS: dict[WorkClass, dict[str, tuple[str, ...]]] = {
             "Busco eso en tus datos.",
             "Reviso lo que tengo tuyo sobre eso.",
         ),
+        "ru": (  # i18n-allow: localized runtime voice output
+            "Смотрю твои записи.",  # i18n-allow
+            "Секунду, гляну у тебя в данных.",  # i18n-allow
+            "Сейчас найду это у тебя.",  # i18n-allow
+            "Смотрю, что у меня есть от тебя по этому.",  # i18n-allow
+        ),
     },
     WorkClass.SCREEN: {
         "de": (  # i18n-allow: localized runtime voice output
@@ -206,6 +218,12 @@ _POOLS: dict[WorkClass, dict[str, tuple[str, ...]]] = {
             "Un momento, reviso la pantalla.",
             "Tomo la pantalla un momento.",
             "Veo qué hay en pantalla.",
+        ),
+        "ru": (  # i18n-allow: localized runtime voice output
+            "Смотрю на экран.",  # i18n-allow
+            "Секунду, проверяю экран.",  # i18n-allow
+            "Беру управление экраном на секунду.",  # i18n-allow
+            "Смотрю, что на экране.",  # i18n-allow
         ),
     },
     # ``{agent}`` is the wake-word-derived agent brand ("<Name>-Agent"),
@@ -229,9 +247,15 @@ _POOLS: dict[WorkClass, dict[str, tuple[str, ...]]] = {
             "Pongo a un {agent} en ello.",
             "Eso queda con un {agent} desde ahora.",
         ),
+        "ru": (  # i18n-allow: localized runtime voice output
+            "Передаю это {agent}.",  # i18n-allow
+            "{agent} займётся этим, я потом доложу.",  # i18n-allow
+            "Ставлю на это {agent}.",  # i18n-allow
+            "Дальше этим занимается {agent}.",  # i18n-allow
+        ),
     },
     # ACTION: deliberately empty — an action ack must reference the request.
-    WorkClass.ACTION: {"de": (), "en": (), "es": ()},
+    WorkClass.ACTION: {"de": (), "en": (), "es": (), "ru": ()},
 }
 
 # No-repeat memory per (class, language): back-to-back acks never share a
@@ -296,7 +320,9 @@ def _fold(text: str) -> str:
     return folded.replace("’", "'").replace("`", "'")
 
 
-_TOKEN_RE = re.compile(r"[a-z0-9]+(?:'[a-z]+)?", re.IGNORECASE)
+# Cyrillic range added alongside Latin so Russian tokens are recognised too
+# (the fold/compare logic itself is script-agnostic).
+_TOKEN_RE = re.compile(r"[a-z0-9\u0400-\u04ff]+(?:'[a-z\u0400-\u04ff]+)?", re.IGNORECASE)
 
 
 def _tokens(text: str) -> list[str]:
@@ -515,6 +541,65 @@ _INTENT_VERBS: dict[str, frozenset[str]] = {
             "scheduling",
             "remind",
             "reminding",
+        }
+    ),
+    # i18n-allow: multilingual output-grammar data. First-person present/future
+    # forms (how the composed ack actually speaks, "Открываю Spotify") plus the
+    # infinitive/imperative stem for the same verb, mirroring the de/en/es
+    # pattern of listing the inflections that really show up in a spoken line
+    # rather than every grammatical form.
+    "ru": frozenset(
+        {
+            "открываю", "открой", "открыть",
+            "делаю", "сделаю", "сделать",
+            "запускаю", "запустить", "запущу",
+            "включаю", "включить",
+            "начинаю", "начать",
+            "проверяю", "проверить",
+            "смотрю", "гляну", "посмотрю", "глянуть", "посмотреть",
+            "ищу", "найти", "поищу", "поискать",
+            "получаю", "получить",
+            "беру", "возьму", "взять",
+            "читаю", "прочитать", "почитаю",
+            "пишу", "написать", "напишу",
+            "отправляю", "отправить", "посылаю", "послать",
+            "ставлю", "поставить", "устанавливаю", "установить",
+            "переключаю", "переключить",
+            "воспроизвожу", "включу",
+            "звоню", "позвонить", "позвоню",
+            "достаю", "вытаскиваю", "достать",
+            "сохраняю", "сохранить", "сохраню",
+            "добавляю", "добавить", "добавлю",
+            "кладу", "положить", "положу",
+            "приношу", "принести",
+            "бронирую", "забронировать",
+            "говорю", "сказать", "скажу",
+            "сообщаю", "сообщить",
+            "спрашиваю", "спросить", "спрошу",
+            "записываю", "записать", "запишу",
+            "отмечаю", "отметить",
+            "меняю", "изменить", "поменяю",
+            "занимаюсь", "заняться", "займусь",
+            "работаю",
+            "передаю", "передать", "передам",
+            "даю", "дать", "дам",
+            "формулирую",
+            "печатаю", "напечатать",
+            "нажимаю", "нажать", "кликаю",
+            "закрываю", "закрыть",
+            "перемещаю", "переместить",
+            "копирую", "скопировать",
+            "удаляю", "удалить",
+            "создаю", "создать",
+            "обновляю", "обновить",
+            "перезапускаю", "перезапустить",
+            "останавливаю", "остановить",
+            "отключаю", "отключить",
+            "приостанавливаю", "приостановить",
+            "продолжаю", "возобновляю", "возобновить",
+            "диктую", "продиктовать",
+            "планирую", "запланировать",
+            "напоминаю", "напомнить",
         }
     ),
     "es": frozenset(
@@ -825,6 +910,33 @@ _FREE_WORDS: dict[str, frozenset[str]] = {
             "voy",
         }
     ),
+    # i18n-allow: multilingual output-grammar data. Pronouns, prepositions,
+    # conjunctions and discourse particles that may sit next to the intent
+    # verb in a short spoken line ("Секунду, открываю Spotify для тебя").
+    "ru": frozenset(
+        {
+            "я", "меня", "мне", "мной",
+            "ты", "тебе", "тебя", "тобой",
+            "твой", "твоя", "твоё", "твои", "твоего", "твоей", "твоим",
+            "себе", "себя",
+            "он", "она", "оно", "они",
+            "его", "её", "их", "им", "ей", "ими",
+            "это", "то", "тот", "та", "те", "этот", "эта", "эти",
+            "и", "а", "но", "или",
+            "что", "чтобы", "если", "ли",
+            "в", "во", "на", "к", "ко", "с", "со", "у", "о", "об",
+            "от", "до", "за", "по", "из", "над", "под", "при", "через", "для",
+            "момент", "секунду", "секунда", "сейчас", "сразу", "же",
+            "быстро", "быстренько", "скорее", "немного", "чуть",
+            "уже", "ещё", "вот", "снова", "опять", "дальше", "потом",
+            "затем", "тогда", "так", "здесь", "тут", "там",
+            "сначала", "сперва",
+            "надо", "нужно", "буду", "будем", "могу", "можно",
+            "попросил", "попросила", "просил", "просила",
+            "да", "окей", "ок", "хорошо", "ладно", "конечно", "пожалуйста",
+            "всё", "все",
+        }
+    ),
 }
 
 # A completion / result claim in an ack is the one thing that must never
@@ -850,7 +962,14 @@ _RESULT_MARKER_RE = re.compile(
     r"enviado|enviada|activado|activada)\b|"
     r"\b(?:he|ya he)\s+(?:\w+\s+){0,3}"
     r"(?:abierto|hecho|guardado|enviado|encontrado|revisado|terminado)\b|"
-    r"\b(?:hecho|listo|terminado|encontrado)\b"
+    r"\b(?:hecho|listo|terminado|encontrado)\b|"
+    r"\b(?:я\s+)?(?:уже\s+)?(?:открыл|открыла|сделал|сделала|запустил|запустила|"
+    r"сохранил|сохранила|отправил|отправила|добавил|добавила|нашёл|нашла|"
+    r"проверил|проверила|закончил|закончила|завершил|завершила|поставил|"
+    r"поставила|включил|включила|выключил|выключила|закрыл|закрыла|"
+    r"обновил|обновила|создал|создала|удалил|удалила)\b|"
+    r"\b(?:готово|сделано|открыто|закрыто|сохранено|отправлено|добавлено|"
+    r"включено|выключено|установлено|обновлено|найдено|закончено|завершено)\b"
     r")"
 )
 
@@ -1050,6 +1169,11 @@ _PROGRESS_POOLS: dict[ToolActivity, dict[str, tuple[str, ...]]] = {
             "La búsqueda sigue en marcha.",
             "La consulta en línea necesita un momento más.",
         ),
+        "ru": (  # i18n-allow: localized runtime voice output
+            "Поиск ещё идёт.",  # i18n-allow
+            "Я всё ещё ищу.",  # i18n-allow
+            "Онлайн-поиску нужно ещё немного времени.",  # i18n-allow
+        ),
     },
     ToolActivity.READ: {
         "de": (  # i18n-allow: localized runtime voice output
@@ -1066,6 +1190,11 @@ _PROGRESS_POOLS: dict[ToolActivity, dict[str, tuple[str, ...]]] = {
             "Sigo leyendo tus registros.",
             "Todavía lo estoy revisando.",
             "Sigo con ello, un momento.",
+        ),
+        "ru": (  # i18n-allow: localized runtime voice output
+            "Всё ещё читаю твои записи.",  # i18n-allow
+            "Всё ещё разбираюсь с этим.",  # i18n-allow
+            "Читаю дальше, секунду.",  # i18n-allow
         ),
     },
     ToolActivity.SCREEN: {
@@ -1084,6 +1213,11 @@ _PROGRESS_POOLS: dict[ToolActivity, dict[str, tuple[str, ...]]] = {
             "El paso en pantalla sigue en marcha.",
             "Un momento más en la pantalla.",
         ),
+        "ru": (  # i18n-allow: localized runtime voice output
+            "Всё ещё работаю с экраном.",  # i18n-allow
+            "Шаг с экраном ещё выполняется.",  # i18n-allow
+            "Ещё момент на экране.",  # i18n-allow
+        ),
     },
     ToolActivity.OTHER: {
         "de": (  # i18n-allow: localized runtime voice output
@@ -1101,9 +1235,14 @@ _PROGRESS_POOLS: dict[ToolActivity, dict[str, tuple[str, ...]]] = {
             "Un momento más.",
             "Ya casi está.",
         ),
+        "ru": (  # i18n-allow: localized runtime voice output
+            "Я всё ещё работаю над этим.",  # i18n-allow
+            "Ещё работаю, секунду.",  # i18n-allow
+            "Почти готово.",  # i18n-allow
+        ),
     },
     # HANDOVER: no line of its own — the spawn reply states the handover.
-    ToolActivity.HANDOVER: {"de": (), "en": (), "es": ()},
+    ToolActivity.HANDOVER: {"de": (), "en": (), "es": (), "ru": ()},
 }
 
 _RECENT_PROGRESS: dict[tuple[ToolActivity, str], deque[str]] = {}
@@ -1231,7 +1370,7 @@ def start_chat_instant_ack(
 #: after the result, so a slow provider simply costs the ack, never the turn.
 CONTEXTUAL_BUDGET_MS = 700
 
-_LANGUAGE_NAMES = {"de": "German", "en": "English", "es": "Spanish"}
+_LANGUAGE_NAMES = {"de": "German", "en": "English", "es": "Spanish", "ru": "Russian"}
 
 
 def language_name(language: str) -> str:

@@ -16,6 +16,7 @@ const LANGUAGE_LABELS: Record<string, string> = {
   en: "English",
   de: "Deutsch",
   es: "Español",
+  ru: "Русский",
 };
 
 /**
@@ -51,6 +52,7 @@ export function LanguageStep({ goNext, goBack, setSummary }: StepProps) {
             { value: "en", label: "English" },
             { value: "de", label: "Deutsch" },
             { value: "es", label: "Español" },
+            { value: "ru", label: "Русский" },
           ]}
         />
       ),
@@ -69,6 +71,7 @@ export function LanguageStep({ goNext, goBack, setSummary }: StepProps) {
             { value: "en", label: "English" },
             { value: "de", label: "Deutsch" },
             { value: "es", label: "Español" },
+            { value: "ru", label: "Русский" },
           ]}
         />
       ),

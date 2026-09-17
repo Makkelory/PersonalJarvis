@@ -141,6 +141,44 @@ _AMBIGUOUS_PATTERNS_ES: tuple[str, ...] = (
     r"\bni idea\b",
 )
 
+# Russian (same Runtime Output Language doctrine as Spanish above — an
+# ru-pinned user must be able to confirm/veto by voice too). Veto keeps
+# priority over confirm (safety bias, Plan-§AP-12).
+_CONFIRM_PATTERNS_RU: tuple[str, ...] = (
+    r"\bда\b",
+    r"\bподтвержда(ю|ем)\b",
+    r"\bподтвердить\b",
+    r"\bсделай\b",
+    r"\bдавай\b",
+    r"\bокей\b",
+    r"\bок\b",
+    r"\bверно\b",
+    r"\bточно\b",
+    r"\bправильно\b",
+    r"\bсогласен\b",
+    r"\bсогласна\b",
+)
+
+_VETO_PATTERNS_RU: tuple[str, ...] = (
+    r"\bнет\b",
+    r"\bотмена\b",
+    r"\bотменить\b",
+    r"\bстоп\b",
+    r"\bне надо\b",
+    r"\bне делай\b",
+    r"\bневерно\b",
+    r"\bнеправильно\b",
+    r"\bзабудь\b",
+)
+
+_AMBIGUOUS_PATTERNS_RU: tuple[str, ...] = (
+    r"\bможет быть\b",
+    r"\bподожди\b",
+    r"\bмомент\b",
+    r"\bне знаю\b",
+    r"\b(хм|эм)\b",
+)
+
 ResponseVerdict = Literal["confirm", "veto", "ambiguous", "unknown"]
 
 
@@ -165,6 +203,10 @@ def classify_response(transcript: str, *, language: str = "de") -> ResponseVerdi
         veto_pats = _VETO_PATTERNS_ES
         confirm_pats = _CONFIRM_PATTERNS_ES
         ambig_pats = _AMBIGUOUS_PATTERNS_ES
+    elif language == "ru":
+        veto_pats = _VETO_PATTERNS_RU
+        confirm_pats = _CONFIRM_PATTERNS_RU
+        ambig_pats = _AMBIGUOUS_PATTERNS_RU
     else:
         veto_pats = _VETO_PATTERNS_DE
         confirm_pats = _CONFIRM_PATTERNS_DE
@@ -270,11 +312,17 @@ _ECHO_TEMPLATE_DE = (
 _ECHO_TEMPLATE_EN = (
     "Got it — {label} switches from {old} to {new}. Confirm?"
 )
+_ECHO_TEMPLATE_RU = (
+    "Понял — {label} меняется с {old} на {new}. Подтверждаешь?"  # i18n-allow
+)
 _ECHO_TEMPLATE_SENSITIVE_DE = (
     "Verstanden — {label} auf einen neuen Wert. Bestätigen?"  # i18n-allow
 )
 _ECHO_TEMPLATE_SENSITIVE_EN = (
     "Got it — {label} to a new value. Confirm?"
+)
+_ECHO_TEMPLATE_SENSITIVE_RU = (
+    "Понял — {label} на новое значение. Подтверждаешь?"  # i18n-allow
 )
 
 
@@ -289,9 +337,14 @@ def format_confirmation(
     """
     label = _voice_label(pending.description)
     if is_sensitive_path(pending.path):
+        if language == "ru":
+            return _ECHO_TEMPLATE_SENSITIVE_RU.format(label=label)
         tmpl = _ECHO_TEMPLATE_SENSITIVE_DE if language == "de" else _ECHO_TEMPLATE_SENSITIVE_EN
         return tmpl.format(label=label)
-    tmpl = _ECHO_TEMPLATE_DE if language == "de" else _ECHO_TEMPLATE_EN
+    if language == "ru":
+        tmpl = _ECHO_TEMPLATE_RU
+    else:
+        tmpl = _ECHO_TEMPLATE_DE if language == "de" else _ECHO_TEMPLATE_EN
     return tmpl.format(
         label=label,
         old=_format_value_for_speech(pending.old_value),
@@ -335,24 +388,51 @@ def format_outcome(
     new_str = (
         "der neue Wert" if (is_sens and language == "de")
         else "the new value" if (is_sens and language == "en")
+        else "новое значение" if (is_sens and language == "ru")
         else _format_value_for_speech(pending.new_value)
     )
     old_str = (
         "der vorherige Wert" if (is_sens and language == "de")
         else "the previous value" if (is_sens and language == "en")
+        else "предыдущее значение" if (is_sens and language == "ru")
         else _format_value_for_speech(pending.old_value)
     )
     if is_sens:
         # Generic phrase — no plaintext leak via the exception message.
         err = (
-            "Validierung schlug fehl"
-            if language == "de"
+            "Validierung schlug fehl" if language == "de"
+            else "проверка не прошла" if language == "ru"
             else "validation failed"
         )
     else:
         err = short_error or (
-            "unbekannter Fehler" if language == "de" else "unknown error"  # i18n-allow
+            "unbekannter Fehler" if language == "de"  # i18n-allow
+            else "неизвестная ошибка" if language == "ru"
+            else "unknown error"
         )
+
+    if language == "ru":
+        if kind == "safe_applied":
+            return f"Понял — {label} теперь {new_str}."
+        if kind == "applied":
+            return f"Готово — {label} теперь {new_str}."
+        if kind == "applied_restart":
+            return (
+                f"Готово — {label} теперь {new_str}. "
+                "Перезапусти Jarvis один раз, чтобы это вступило в силу."
+            )
+        if kind == "validate_failed":
+            return f"Не получится — {err}. Настройка остаётся {old_str}."
+        if kind == "rollback":
+            return (
+                "Не удалось сохранить, я восстановил предыдущее "
+                f"состояние. {err}"
+            )
+        if kind == "vetoed":
+            return "Хорошо, оставляю как есть."
+        if kind == "timeout":
+            return f"Не услышал ответа, отменяю. Настройка остаётся {old_str}."
+        return ""
 
     if language == "de":
         if kind == "safe_applied":

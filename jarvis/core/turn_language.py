@@ -55,7 +55,7 @@ DEFAULT_LOCALE = "en"
 
 #: The codes an explicit ``brain.reply_language`` pin may carry (``"auto"`` is
 #: deliberately absent — it means "no pin, mirror the input").
-_REPLY_PINS: frozenset[str] = frozenset({"de", "en", "es"})
+_REPLY_PINS: frozenset[str] = frozenset({"de", "en", "es", "ru"})
 
 #: A turn with at most this many word tokens is a "thin" turn — a one- or
 #: two-word interjection ("Now", "Stop now", "jetzt", a lone loanword). A thin
@@ -71,19 +71,23 @@ _TOKEN_RE = re.compile(r"\b[\w']+\b", re.UNICODE)
 # translation, quotation, negation, or task. The vocabulary is speech input.
 _LANGUAGE_REQUEST_RE = re.compile(
     r"(?:jarvis[\s,]+)?"
-    r"(?:(?:please|bitte|por favor)[\s,]+)?"  # i18n-allow
-    r"(?:(?:can|could|would) you\s+|(?:kannst|könntest) du\s+|puedes\s+)?"  # i18n-allow
-    r"(?:(?:please|bitte|por favor)\s+)?"  # i18n-allow
+    r"(?:(?:please|bitte|por favor|пожалуйста)[\s,]+)?"  # i18n-allow
+    r"(?:(?:can|could|would) you\s+|(?:kannst|könntest) du\s+|puedes\s+"  # i18n-allow
+    r"|(?:можешь|могла бы|мог бы|можешь ли ты)\s+)?"  # i18n-allow
+    r"(?:(?:please|bitte|por favor|пожалуйста)\s+)?"  # i18n-allow
     r"(?:(?:speak|reply|respond|answer|continue|switch)(?:\s+to me)?\s+"
     r"|(?:sprich|spreche|antworte|antworten|rede|wechsel|wechsle)\s+"  # i18n-allow
     r"|(?:sollst|du sollst)\s+"  # i18n-allow
-    r"|(?:habla|háblame|responde|contesta|cambia)\s+)?"
-    r"(?:(?:please|bitte|por favor)\s+)?"  # i18n-allow
-    r"(?:(?:in|auf|en|to|zu|a)\s+)?"  # i18n-allow
+    r"|(?:habla|háblame|responde|contesta|cambia)\s+"
+    r"|(?:говори|говорить|отвечай|отвечать|ответь|продолжай|"  # i18n-allow
+    r"переключись|переключайся|скажи)\s+)?"  # i18n-allow
+    r"(?:(?:please|bitte|por favor|пожалуйста)\s+)?"  # i18n-allow
+    r"(?:(?:in|auf|en|to|zu|a|на)\s+)?"  # i18n-allow
     r"(?P<language>deutsch|german|alemán|aleman|english|englisch|inglés|ingles"  # i18n-allow
-    r"|español|espanol|spanish|spanisch)"  # i18n-allow
-    r"(?:\s+(?:antworten|sprechen))?"  # i18n-allow
-    r"(?:[\s,]+(?:please|bitte|por favor|now|jetzt|ahora))?"  # i18n-allow
+    r"|español|espanol|spanish|spanisch"  # i18n-allow
+    r"|по-русски|русском|русский|русски)"  # i18n-allow
+    r"(?:\s+(?:antworten|sprechen|языке))?"  # i18n-allow
+    r"(?:[\s,]+(?:please|bitte|por favor|пожалуйста|now|jetzt|ahora|сейчас))?"  # i18n-allow
     r"[\s.!?]*",
     re.IGNORECASE,
 )
@@ -91,6 +95,7 @@ _REQUEST_LANGUAGE_CODES = {
     "deutsch": "de", "german": "de", "alemán": "de", "aleman": "de",  # i18n-allow
     "english": "en", "englisch": "en", "inglés": "en", "ingles": "en",  # i18n-allow
     "español": "es", "espanol": "es", "spanish": "es", "spanisch": "es",  # i18n-allow
+    "по-русски": "ru", "русском": "ru", "русский": "ru", "русски": "ru",  # i18n-allow
 }
 
 # Output validation deliberately ignores code and links. They frequently carry
@@ -150,9 +155,13 @@ class OutputLanguageValidation:
 
 
 # Strong script signals: German-specific letters and Spanish punctuation or
-# accented vowels (minus the pan-European acute-e) are useful hints.
+# accented vowels (minus the pan-European acute-e) are useful hints. Cyrillic
+# is a stronger signal still — unlike accented Latin letters, it never appears
+# in German/English/Spanish prose at all, so even a modest presence is
+# decisive evidence for Russian.
 _DE_SCRIPT_RE = re.compile(r"[äöüÄÖÜß]")  # i18n-allow: German-script regex
 _ES_SCRIPT_RE = re.compile(r"[áíóúñÁÍÓÚÑ¿¡]")
+_CYRILLIC_RE = re.compile(r"[\u0400-\u04ff]")
 
 # Function-word sets, kept mutually disjoint. Words common to more than one of
 # the three languages are excluded on purpose (see module docstring).
@@ -188,11 +197,30 @@ _ES_TOKENS: frozenset[str] = frozenset({
     "puedo", "quiero", "necesito", "dime", "dame", "abre", "muestra", "lee",
     "escribe", "y", "pero", "con", "del", "al", "muy", "bien", "clima",
 })
+# i18n-allow: multilingual detection vocabulary. Cyrillic script alone already
+# separates Russian from de/en/es (see _CYRILLIC_RE), so this set exists mainly
+# to keep the scoring path in detect_text_language / _has_language_switch_evidence
+# uniform across all four languages rather than special-casing Russian there.
+_RU_TOKENS: frozenset[str] = frozenset({
+    "и", "или", "но", "не", "это", "этот", "эта", "эти", "тот", "та", "те",
+    "я", "ты", "мы", "вы", "он", "она", "оно", "они",
+    "мне", "меня", "тебе", "тебя", "нам", "нас", "вам", "вас",
+    "пожалуйста", "спасибо", "привет", "да", "нет",
+    "как", "где", "когда", "почему", "зачем", "какой", "какая", "какое",
+    "можешь", "можете", "должен", "должна", "нужно", "хочу", "хочешь",
+    "открой", "открыть", "покажи", "показать", "прочитай", "прочитать",
+    "напиши", "написать", "скажи", "сказать",
+    "сегодня", "завтра", "вечером", "сейчас", "уже", "ещё",
+    "погода", "идёт", "есть", "будет",
+    "мой", "моя", "моё", "твой", "твоя", "твоё",
+    "с", "со", "для", "от", "до", "по", "на", "во", "в", "у",
+})
 
 _SETS: tuple[tuple[str, frozenset[str]], ...] = (
     ("de", _DE_TOKENS),
     ("en", _EN_TOKENS),
     ("es", _ES_TOKENS),
+    ("ru", _RU_TOKENS),
 )
 
 # Whisper cloud APIs return language NAMES; local faster-whisper returns ISO
@@ -202,6 +230,7 @@ _TAG_TO_CODE: dict[str, str] = {
     "en": "en", "eng": "en", "english": "en", "englisch": "en",
     "es": "es", "spa": "es", "spanish": "es", "spanisch": "es",
     "espanol": "es", "español": "es", "castellano": "es",
+    "ru": "ru", "rus": "ru", "russian": "ru", "russisch": "ru", "ruso": "ru",
 }
 
 
@@ -229,6 +258,8 @@ def detect_text_language(text: str) -> str:
         scores["de"] += 2
     if _ES_SCRIPT_RE.search(t):
         scores["es"] += 2
+    if _CYRILLIC_RE.search(t):
+        scores["ru"] += 3
     best_code, best = max(scores.items(), key=lambda kv: kv[1])
     if best == 0 or sum(1 for s in scores.values() if s == best) > 1:
         return "unknown"
@@ -275,6 +306,8 @@ def _detect_strong_supported_output(text: str, tokens: list[str]) -> str:
         scores["de"] += 2
     if _ES_SCRIPT_RE.search(text):
         scores["es"] += 2
+    if _CYRILLIC_RE.search(text):
+        scores["ru"] += 3
     ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
     (best_code, best_score), (_, second_score) = ranked[:2]
     if best_score < 3 or best_score == second_score:

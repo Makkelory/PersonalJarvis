@@ -516,7 +516,7 @@ def put_team_proxy(body: TeamProxyBody, request: Request) -> dict[str, object]:
 # over /ws). Key-free same-origin route, like reply-language.
 # ----------------------------------------------------------------------
 
-_UI_LANGUAGES: tuple[str, ...] = ("en", "de", "es")
+_UI_LANGUAGES: tuple[str, ...] = ("en", "de", "es", "ru")
 
 
 class UiLanguageBody(BaseModel):
@@ -993,7 +993,7 @@ def _live_apply_wake_plan(request: Request, *, log_tag: str) -> bool:
 # [trigger.wake_word] language and resolved by resolve_wake_language.
 # ----------------------------------------------------------------------
 
-_WAKE_LANGUAGES: tuple[str, ...] = ("auto", "de", "en", "es")
+_WAKE_LANGUAGES: tuple[str, ...] = ("auto", "de", "en", "es", "ru")
 
 
 class WakeLanguageBody(BaseModel):
