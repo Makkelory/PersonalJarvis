@@ -993,7 +993,7 @@ def _live_apply_wake_plan(request: Request, *, log_tag: str) -> bool:
 # [trigger.wake_word] language and resolved by resolve_wake_language.
 # ----------------------------------------------------------------------
 
-_WAKE_LANGUAGES: tuple[str, ...] = ("auto", "de", "en", "es")
+_WAKE_LANGUAGES: tuple[str, ...] = ("auto", "de", "en", "es", "ru")
 
 
 class WakeLanguageBody(BaseModel):
