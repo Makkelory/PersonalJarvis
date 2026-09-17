@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from jarvis.core.turn_language import DEFAULT_LOCALE, normalize_language_tag
 
-_PHRASE_LANGS: frozenset[str] = frozenset({"de", "en", "es"})
+_PHRASE_LANGS: frozenset[str] = frozenset({"de", "en", "es", "ru"})
 
 
 def _phrase_lang(language: str | None) -> str:
@@ -43,16 +43,19 @@ _TOOL_QUESTIONS: dict[str, dict[str, str]] = {
         "de": "Soll ich die E-Mail wirklich senden? Sag ja oder nein.",
         "en": "Do you really want me to send the email? Say yes or no.",
         "es": "¿Quieres que envíe el correo de verdad? Di sí o no.",
+        "ru": "Мне действительно отправить это письмо? Скажи да или нет.",
     },
     "gmail_rest": {
         "de": "Soll ich die E-Mail wirklich senden? Sag ja oder nein.",
         "en": "Do you really want me to send the email? Say yes or no.",
         "es": "¿Quieres que envíe el correo de verdad? Di sí o no.",
+        "ru": "Мне действительно отправить это письмо? Скажи да или нет.",
     },
     "call-contact": {
         "de": "Soll ich den Anruf wirklich starten? Sag ja oder nein.",
         "en": "Do you really want me to place the call? Say yes or no.",
         "es": "¿Quieres que haga la llamada de verdad? Di sí o no.",
+        "ru": "Мне действительно совершить этот звонок? Скажи да или нет.",
     },
 }
 
@@ -60,6 +63,7 @@ _GENERIC_QUESTION: dict[str, str] = {
     "de": "Soll ich das wirklich ausführen? Sag ja oder nein.",
     "en": "Do you really want me to do that? Say yes or no.",
     "es": "¿Quieres que lo haga de verdad? Di sí o no.",
+    "ru": "Мне действительно это выполнить? Скажи да или нет.",
 }
 
 
@@ -75,6 +79,8 @@ _IMPACT_QUESTIONS: dict[str, dict[str, str]] = {
                "Do you really want me to run it? Say yes or no."),
         "es": ("Cuidado, este comando borraría algo ({commands}). "
                "¿Quieres que lo ejecute de verdad? Di sí o no."),
+        "ru": ("Осторожно, эта команда что-то удалит ({commands}). "
+               "Мне правда её выполнить? Скажи да или нет."),
     },
     "modify": {
         "de": ("Dieser Befehl würde etwas auf dem Computer verändern "
@@ -83,6 +89,8 @@ _IMPACT_QUESTIONS: dict[str, dict[str, str]] = {
                "({commands}). Do you want me to run it? Say yes or no."),
         "es": ("Este comando cambiaría algo en el equipo ({commands}). "
                "¿Quieres que lo ejecute? Di sí o no."),
+        "ru": ("Эта команда что-то изменит на компьютере ({commands}). "
+               "Выполнить её? Скажи да или нет."),
     },
     "read": {
         "de": ("Dieser Befehl liest nur Daten ({commands}). "
@@ -91,6 +99,8 @@ _IMPACT_QUESTIONS: dict[str, dict[str, str]] = {
                "Do you want me to run it? Say yes or no."),
         "es": ("Este comando solo lee datos ({commands}). "
                "¿Quieres que lo ejecute? Di sí o no."),
+        "ru": ("Эта команда только читает данные ({commands}). "
+               "Выполнить её? Скажи да или нет."),
     },
 }
 
@@ -136,26 +146,31 @@ _OUTCOME: dict[str, dict[str, str]] = {
         "de": "Erledigt.",
         "en": "Done.",
         "es": "Listo.",
+        "ru": "Готово.",
     },
     "vetoed": {
         "de": "Okay, lass ich.",
         "en": "Okay, leaving it.",
         "es": "Vale, lo dejo.",
+        "ru": "Хорошо, оставляю как есть.",
     },
     "timeout": {
         "de": "Hab keine Antwort gehört, ich lass es.",
         "en": "No answer heard, leaving it.",
         "es": "No te he oído, lo dejo.",
+        "ru": "Не услышал ответа, оставляю как есть.",
     },
     "failed": {
         "de": "Das hat nicht geklappt.",
         "en": "That didn't work.",
         "es": "Eso no funcionó.",
+        "ru": "Это не сработало.",
     },
     "unclear": {
         "de": "Sag bitte einfach ja oder nein.",
         "en": "Please just say yes or no.",
         "es": "Di simplemente sí o no, por favor.",
+        "ru": "Пожалуйста, просто скажи да или нет.",
     },
     # Nobody could be asked at all — an unattended run (a scheduled workflow,
     # a cron job, a one-shot CLI call) reached a consequential tool. Says why
@@ -168,6 +183,8 @@ _OUTCOME: dict[str, dict[str, str]] = {
               "So I did not do it.",
         "es": "Eso necesita tu aprobación y aquí nadie puede darla. "
               "Así que no lo hice.",
+        "ru": "Для этого нужно твоё разрешение, а дать его здесь некому. "
+              "Я этого не сделал.",
     },
 }
 
