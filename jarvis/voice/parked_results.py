@@ -52,7 +52,7 @@ SURFACE_PIPELINE: Final[str] = "pipeline"
 SURFACE_CHAT: Final[str] = "chat"
 SURFACE_CHANNEL: Final[str] = "channel"
 
-_SUPPORTED_LANGUAGES: Final[tuple[str, ...]] = ("de", "en", "es")
+_SUPPORTED_LANGUAGES: Final[tuple[str, ...]] = ("de", "en", "es", "ru")
 _DEFAULT_LANGUAGE: Final[str] = "en"
 _MAX_WAIT_QUERY_WORDS: Final[int] = 9
 _TOPIC_MAX_WORDS: Final[int] = 8
@@ -209,10 +209,12 @@ def requested_result(items: Sequence[ParkedResult], query: str) -> ParkedResult 
 # request that merely contains "result" stays a real turn for the model.
 _LEAD_IN: Final[str] = (
     r"(?:(?:ja|yes|s[ií]|und|and|y|also|so|okay|ok|hey|hallo|hello|hola|"
-    r"jarvis|bitte|please|por\s+favor|sag\s+mal|tell\s+me|dime)\s+)*"
+    r"jarvis|bitte|please|por\s+favor|sag\s+mal|tell\s+me|dime|"
+    r"да|привет|пожалуйста|скажи|ну)\s+)*"
 )
 _TAIL: Final[str] = (
-    r"(?:\s+(?:damit|dabei|schon|jetzt|denn|eigentlich|now|yet|already|ya|ahora|con\s+eso))*"
+    r"(?:\s+(?:damit|dabei|schon|jetzt|denn|eigentlich|now|yet|already|ya|ahora|con\s+eso|"
+    r"уже|ещё|еще|тогда|вообще))*"
 )
 
 _PROGRESS_CORES: Final[tuple[str, ...]] = (
@@ -240,6 +242,16 @@ _PROGRESS_CORES: Final[tuple[str, ...]] = (
     r"(?:ya\s+)?(?:has\s+terminado|terminaste|est(?:á|a)s\s+listo)",
     r"cu(?:á|a)nto\s+(?:falta|tarda|queda)",
     r"sigues\s+(?:trabajando|en\s+ello)",
+    # --- Russian ---
+    r"как\s+(?:у\s+тебя\s+)?дела(?:\s+с\s+этим)?",
+    r"как\s+(?:там\s+)?(?:дела\s+|это\s+)?(?:идёт|идет|продвигается)",
+    r"далеко\s+ли\s+ты",
+    r"ты\s+уже\s+(?:готов|закончил|закончила)",
+    r"это\s+уже\s+готово",
+    r"сколько\s+(?:ещё|еще)(?:\s+(?:осталось|ждать))?",
+    r"сколько\s+это\s+(?:займёт|займет|еще\s+займёт|ещё\s+займёт)",
+    r"ты\s+(?:ещё|еще)\s+(?:работаешь(?:\s+над\s+этим)?|этим\s+занимаешься)",
+    r"есть\s+(?:прогресс|подвижки)",
 )
 
 _RESULT_CORES: Final[tuple[str, ...]] = (
@@ -264,6 +276,13 @@ _RESULT_CORES: Final[tuple[str, ...]] = (
     r"(?:ya\s+)?tienes\s+(?:el|un|alg(?:ú|u)n)?\s*resultado",
     r"y\s+el\s+resultado",
     r"cu(?:á|a)l\s+es\s+el\s+resultado",
+    # --- Russian ---
+    r"что\s+(?:получилось|нашёл|нашел|ты\s+нашёл|ты\s+нашел|вышло)",
+    r"(?:у\s+тебя\s+)?есть\s+результат",
+    r"какой\s+результат",
+    r"и\s+(?:какой\s+)?результат",
+    r"ты\s+(?:нашёл|нашел)\s+что-нибудь",
+    r"что\s+там(?:\s+с\s+этим)?",
 )
 
 
@@ -314,6 +333,10 @@ _TOPIC_STOPWORDS: Final[dict[str, frozenset[str]]] = {
         "por favor puedes podrías me mi yo hey hola jarvis ok vale y luego "
         "el la los las un una unos unas".split()
     ),
+    "ru": frozenset(
+        "пожалуйста можешь можешь ли ты мне мой мою моё эй джарвис окей "
+        "ладно и потом просто быстро скажи".split()
+    ),
 }
 
 _ANCHOR_POOLS: Final[dict[str, tuple[str, ...]]] = {
@@ -332,6 +355,11 @@ _ANCHOR_POOLS: Final[dict[str, tuple[str, ...]]] = {
         "Volviendo a {topic}: {result}",
         "El resultado sobre {topic}: {result}",
     ),
+    "ru": (
+        "По поводу твоего запроса раньше – {topic}: {result}",
+        "Возвращаясь к {topic}: {result}",
+        "Результат по {topic}: {result}",
+    ),
 }
 _ANCHOR_POOLS_NO_TOPIC: Final[dict[str, tuple[str, ...]]] = {
     "de": (
@@ -345,6 +373,10 @@ _ANCHOR_POOLS_NO_TOPIC: Final[dict[str, tuple[str, ...]]] = {
     "es": (
         "Sobre tu petición de antes: {result}",
         "Volviendo a lo de antes: {result}",
+    ),
+    "ru": (
+        "По поводу твоего запроса раньше: {result}",
+        "Возвращаясь к тому, что ты спрашивал: {result}",
     ),
 }
 
