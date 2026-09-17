@@ -3090,13 +3090,18 @@
       "es": {
         "label": "Español (Spanisch)",
         "description": "Spanisch für jede Beschriftung und Schaltfläche."
+      },
+      "ru": {
+        "label": "Русский (Russisch)",
+        "description": "Russisch für jede Beschriftung und Schaltfläche."
       }
     },
     "reply_options": {
       "auto": "{name} spiegelt die Sprache, die du sprichst oder schreibst.",
       "en": "{name} antwortet auf Englisch.",
       "de": "{name} antwortet auf Deutsch.",
-      "es": "{name} antwortet auf Spanisch."
+      "es": "{name} antwortet auf Spanisch.",
+      "ru": "{name} antwortet auf Russisch."
     },
     "stt_options": {
       "auto": "Erkennt automatisch, welche Sprache du sprichst.",
