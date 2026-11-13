@@ -1890,6 +1890,7 @@ _VOICES_FOR_PROVIDER: dict[str, frozenset[str]] = {
             "vits-piper-es_ES-davefx-medium",
             "vits-piper-es_ES-sharvard-medium",
             "vits-piper-ru_RU-denis-medium",
+            "vits-piper-ru_RU-dmitri-medium",
             "vits-piper-ru_RU-irina-medium",
         }
     ),

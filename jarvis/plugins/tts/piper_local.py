@@ -64,8 +64,14 @@ class PiperLocalTTS:
         gender: str | None = None,
         num_threads: int = 2,
         speed: float = _DEFAULT_SPEED,
+        preferred_voices: tuple[str, ...] = (),
     ) -> None:
         self._preferred_voice = (voice or "").strip() or None
+        # Voices the user picked in settings. Honoured only INSIDE the turn's
+        # language (a Piper voice is monolingual), ahead of the gender profile.
+        self._preferred_voices = tuple(
+            v.strip() for v in preferred_voices if v and v.strip()
+        )
         # Voice PROFILE rather than a single voice id: the pipeline may switch
         # language between turns, and the replacement must be the same kind of
         # speaker. Without this a language switch also switches sex, which is
@@ -134,6 +140,10 @@ class PiperLocalTTS:
                 language or "unknown",
             )
             candidates = list(installed)
+        # A voice the user chose in settings wins within this turn's language.
+        for chosen in self._preferred_voices:
+            if chosen in candidates:
+                return chosen
         # Same speaker profile across languages where possible.
         preferred = [
             m for m in candidates if installed[m].gender == self._gender

@@ -96,6 +96,22 @@ def test_russian_turns_get_a_russian_voice(all_voices_installed) -> None:
     assert SHERPA_BUNDLES[feminine].gender == "feminine"
 
 
+def test_a_chosen_voice_wins_only_inside_its_language(all_voices_installed) -> None:
+    """A voice picked in settings beats the gender default, but never the language."""
+    tts = PiperLocalTTS(
+        preferred_voices=("vits-piper-ru_RU-dmitri-medium", "vits-piper-de_DE-ramona-low")
+    )
+
+    asyncio.run(_speak(tts, "Доброе утро", "ru-RU"))
+    russian = tts.last_voice
+    asyncio.run(_speak(tts, "Good morning", "en-US"))
+    english = tts.last_voice
+
+    assert russian == "vits-piper-ru_RU-dmitri-medium"
+    # No chosen voice speaks English, so the normal per-language default applies.
+    assert english is not None and "en_US" in english
+
+
 def test_the_speaker_profile_survives_a_language_switch(all_voices_installed) -> None:
     """Switching language must not switch WHO is speaking (BUG-086's shape)."""
     from jarvis.speech.local_models import SHERPA_BUNDLES

@@ -596,6 +596,12 @@ SHERPA_BUNDLES: dict[str, SherpaBundle] = {
         language="ru",
         gender="masculine",
     ),
+    "vits-piper-ru_RU-dmitri-medium": _piper_bundle(
+        "vits-piper-ru_RU-dmitri-medium",
+        label="Dmitri (Russian)",
+        language="ru",
+        gender="masculine",
+    ),
     "vits-piper-ru_RU-irina-medium": _piper_bundle(
         "vits-piper-ru_RU-irina-medium",
         label="Irina (Russian)",
