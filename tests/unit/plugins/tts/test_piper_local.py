@@ -78,6 +78,24 @@ def test_each_language_gets_its_own_voice(all_voices_installed) -> None:
     assert spanish is not None and "es_ES" in spanish
 
 
+def test_russian_turns_get_a_russian_voice(all_voices_installed) -> None:
+    """Fork addition: a "ru" turn must pick the Russian voice, not another accent."""
+    from jarvis.speech.local_models import SHERPA_BUNDLES
+
+    tts = PiperLocalTTS()
+    asyncio.run(_speak(tts, "Доброе утро", "ru-RU"))
+    masculine = tts.last_voice
+
+    feminine_tts = PiperLocalTTS(gender="feminine")
+    asyncio.run(_speak(feminine_tts, "Доброе утро", "ru"))
+    feminine = feminine_tts.last_voice
+
+    assert masculine is not None and "ru_RU" in masculine
+    assert feminine is not None and "ru_RU" in feminine
+    assert SHERPA_BUNDLES[masculine].gender == "masculine"
+    assert SHERPA_BUNDLES[feminine].gender == "feminine"
+
+
 def test_the_speaker_profile_survives_a_language_switch(all_voices_installed) -> None:
     """Switching language must not switch WHO is speaking (BUG-086's shape)."""
     from jarvis.speech.local_models import SHERPA_BUNDLES
@@ -218,6 +236,8 @@ def test_voices_cover_every_supported_reply_language() -> None:
     languages = {SHERPA_BUNDLES[v].language for v in PIPER_DEFAULT_VOICES}
 
     assert {"de", "en", "es"} <= languages
+    # Fork addition: Russian is a supported UI/reply language too.
+    assert "ru" in languages
 
 
 def test_default_voices_share_one_speaker_profile() -> None:

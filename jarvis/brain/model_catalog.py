@@ -317,9 +317,11 @@ TTS_CATALOG: dict[str, tuple[str, list[ModelInfo]]] = {
                 ("vits-piper-de_DE-thorsten-medium", "Thorsten — German, masculine"),
                 ("vits-piper-en_US-ryan-medium", "Ryan — English, masculine"),
                 ("vits-piper-es_ES-davefx-medium", "Dave — Spanish, masculine"),
+                ("vits-piper-ru_RU-denis-medium", "Denis — Russian, masculine"),
                 ("vits-piper-de_DE-ramona-low", "Ramona — German, feminine"),
                 ("vits-piper-en_US-amy-medium", "Amy — English, feminine"),
                 ("vits-piper-es_ES-sharvard-medium", "Sharvard — Spanish, feminine"),
+                ("vits-piper-ru_RU-irina-medium", "Irina — Russian, feminine"),
             ]
         ),
     ),

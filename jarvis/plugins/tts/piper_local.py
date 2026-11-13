@@ -247,12 +247,15 @@ class PiperLocalTTS:
             return False
 
         def _callback(samples: Any, _progress: float) -> int:
+            # sherpa-onnx contract: return 1 to KEEP generating, 0 to stop.
+            # (Verified on 1.13.4: returning 0 on the first chunk cuts a five
+            # second sentence down to ~0.6 s, so this must not be inverted.)
             data = _pcm(samples)
             if data:
                 emitted.set()
                 if not _put(data):
-                    return 1
-            return 1 if stopped.is_set() else 0
+                    return 0
+            return 0 if stopped.is_set() else 1
 
         nonlocal_rate = [sample_rate]
 
