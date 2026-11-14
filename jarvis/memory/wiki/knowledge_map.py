@@ -27,7 +27,7 @@ _FOLDER = "jarvis-knowledge"
 _TOOL_PROGRAMS = {
     "spotify_control": ["Spotify"], "steam_control": ["Steam"], "happ_vpn": ["Happ"],
     "open_app": [], "close_app": [], "window_control": [], "app_catalog": [], "browser_control": [],
-    "memory_notes": [], "scenes": ["Spotify", "Steam"],
+    "memory_notes": [], "scenes": ["Spotify", "Steam"], "study_course": [], "skill_from_knowledge": [],
 }
 _BAD = re.compile(r'[\\/:*?"<>|#^\[\]]')
 
@@ -53,11 +53,13 @@ def _tool_classes() -> dict[str, Any]:
     from jarvis.plugins.tool.browser_control import BrowserControlTool
     from jarvis.plugins.tool.memory_notes import MemoryNotesTool
     from jarvis.plugins.tool.scenes import ScenesTool
+    from jarvis.plugins.tool.study_course import StudyCourseTool
+    from jarvis.plugins.tool.skill_from_knowledge import SkillFromKnowledgeTool
 
     tools = [OpenAppTool, CloseAppTool, ListAppsTool, SetVolumeTool, SystemStatusTool, FileOpsTool, PcControlTool,
              NetworkStatusTool, SetTimerTool, GetWeatherTool, GetRatesTool, CalculateTool, SpotifyControlTool,
              SteamControlTool, HappVpnTool, WindowControlTool, AppCatalogTool, BrowserControlTool, MemoryNotesTool,
-             ScenesTool]
+             ScenesTool, StudyCourseTool, SkillFromKnowledgeTool]
     return {cls.name: cls for cls in tools}
 
 

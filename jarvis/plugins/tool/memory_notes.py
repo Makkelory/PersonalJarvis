@@ -56,6 +56,50 @@ def _remember(text: str) -> str:
     return f"Запомнил: {text.strip()}"
 
 
+def _learn(topic: str, text: str, source: str, related: list[str], meta: dict[str, str] | None = None) -> str:
+    """Write what Jarvis learned as ``Знания/<topic>.md`` and link it to what it already knows."""
+    safe = re.sub(r'[\\/:*?"<>|#^\[\]]', " ", topic).strip()[:80]
+    if not safe:
+        return "У темы нет названия."
+    base = _VAULT / "jarvis-knowledge"
+    folder = base / "Знания"
+    folder.mkdir(parents=True, exist_ok=True)
+    note = folder / f"{safe}.md"
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    links = []
+    for name in related:
+        name = str(name).strip()
+        if not name:
+            continue
+        if (folder / f"{name}.md").exists():
+            links.append(f"[[jarvis-knowledge/Знания/{name}|{name}]]")
+            continue
+        for kind in ("Программы", "Умения"):
+            if (base / kind / f"{name}.md").exists():
+                links.append(f"[[jarvis-knowledge/{kind}/{name}|{name}]]")
+                break
+        else:
+            links.append(name)
+    parts = []
+    if not note.exists():
+        extra = "".join(f"{k}: {v}\n" for k, v in (meta or {}).items() if v)
+        parts.append("---\ntype: jarvis-knowledge\ncreated: " + stamp[:10] + "\n" + extra + "---\n\n# " + safe + "\n\n")
+    parts.append("## " + stamp + "\n\n" + _link_names(text.strip()) + "\n\n")
+    if source:
+        parts.append("Источник: " + source + "\n\n")
+    if links:
+        parts.append("Связано: " + ", ".join(links) + "\n\n")
+    parts.append("Все знания: [[jarvis-knowledge/Знания|Знания]], как я учусь: [[jarvis-knowledge/Обучение|Обучение]]\n\n")
+    with note.open("a", encoding="utf-8") as f:
+        f.write("".join(parts))
+    hub = base / "Знания.md"
+    entry = f"- [[jarvis-knowledge/Знания/{safe}|{safe}]]"
+    hub_text = hub.read_text(encoding="utf-8") if hub.exists() else "# Знания\n\n"
+    if entry not in hub_text:
+        hub.write_text(hub_text.rstrip() + "\n" + entry + "\n", encoding="utf-8")
+    return f"Записал в знания: {safe}."
+
+
 def _recall(query: str) -> str:
     tokens = [t for t in re.findall(r"\w{3,}", query.lower())]
     if not tokens:
@@ -82,13 +126,16 @@ class MemoryNotesTool:
     risk_tier: str = "monitor"
     description: str = (
         "Long-term memory in the Obsidian vault. action: remember (text: a fact the user wants kept), "
-        "recall (query: search the vault and remembered facts), history (days_back: 0 today, 1 yesterday; "
+        "learn (topic, text, source=url, related=[names of tools/programs/other topics]: write what you learned as a linked "
+        "knowledge note), recall (query: search the vault and remembered facts), history (days_back: 0 today, 1 yesterday; "
         "the voice commands the user gave)."
     )
     schema: dict[str, Any] = {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["remember", "recall", "history"]},
+            "action": {"type": "string", "enum": ["remember", "learn", "recall", "history"]},
+            "topic": {"type": "string"}, "source": {"type": "string"},
+            "related": {"type": "array", "items": {"type": "string"}},
             "text": {"type": "string"}, "query": {"type": "string"},
             "days_back": {"type": "integer", "minimum": 0, "maximum": 60},
         },
@@ -105,6 +152,13 @@ class MemoryNotesTool:
             if not text:
                 return ToolResult(success=False, output=None, error="text is empty")
             return ToolResult(success=True, output=await asyncio.to_thread(_remember, text))
+        if action == "learn":
+            topic, text = str(args.get("topic") or "").strip(), str(args.get("text") or "").strip()
+            if not topic or not text:
+                return ToolResult(success=False, output=None, error="learn needs topic and text")
+            related = [str(x) for x in (args.get("related") or [])]
+            return ToolResult(success=True, output=await asyncio.to_thread(
+                _learn, topic, text, str(args.get("source") or ""), related))
         if action == "recall":
             return ToolResult(success=True, output=await asyncio.to_thread(_recall, str(args.get("query") or "")))
         if action == "history":

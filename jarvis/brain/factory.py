@@ -283,7 +283,7 @@ ROUTER_TOOLS = frozenset({
     "file-ops", "pc-control", "network-status",
     "set-timer", "get-weather", "get-rates", "calculate",
     "spotify-control", "steam-control", "happ-vpn",
-    "window-control", "app-catalog", "browser-control", "memory-notes", "scenes",
+    "window-control", "app-catalog", "browser-control", "memory-notes", "scenes", "study-course", "skill-from-knowledge",
 })
 
 # Phase 7.3 — self-mod tools are registered directly in the router loader in
@@ -683,6 +683,8 @@ def _load_local_action_tools(
     from jarvis.plugins.tool.window_control import WindowControlTool
     from jarvis.plugins.tool.browser_control import BrowserControlTool
     from jarvis.plugins.tool.memory_notes import MemoryNotesTool
+    from jarvis.plugins.tool.study_course import StudyCourseTool
+    from jarvis.plugins.tool.skill_from_knowledge import SkillFromKnowledgeTool
     from jarvis.plugins.tool import scenes as _scenes
     from jarvis.plugins.tool.steam_control import SteamControlTool
     from jarvis.plugins.tool.open_app import OpenAppTool
@@ -720,6 +722,8 @@ def _load_local_action_tools(
         "app_catalog": AppCatalogTool(),
         "browser_control": BrowserControlTool(),
         "memory_notes": MemoryNotesTool(),
+        "study_course": StudyCourseTool(),
+        "skill_from_knowledge": SkillFromKnowledgeTool(),
         "scenes": _scenes.ScenesTool(),
         "type_text": TypeTextTool(),
         "hotkey": HotkeyTool(),

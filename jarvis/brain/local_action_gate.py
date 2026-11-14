@@ -1616,12 +1616,39 @@ _SCENE_RE = re.compile(
 _WORD_NUM = {"два": 2, "три": 3, "четыре": 4}
 
 
+_COURSE_STATUS_RE = re.compile(
+    _PRE + r"(?:(?:какой\s+)?статус\s+(?:курса|обучения)|как\s+(?:идёт|идет|продвигается)\s+(?:курс|обучение)|что\s+ты\s+(?:уже\s+)?изучил|сколько\s+(?:ты\s+)?(?:уже\s+)?изучил)[\s?.!]*$",
+    re.I,
+)
+_COURSE_PAUSE_RE = re.compile(
+    _PRE + r"(?:останови|приостанови|поставь\s+на\s+паузу)\s+(?:курс|обучение)|пауза\s+(?:курса|обучения)[\s?.!]*$", re.I,
+)
+
+
 def _match_new_skills(original: str) -> LocalActionPlan | None:
     """Browser, named windows, layouts, memory and scenes (fork addition 2026-11-14)."""
 
     def plan(tool: str, args: dict[str, object]) -> LocalActionPlan:
         return LocalActionPlan(mode=LocalActionMode.DIRECT, tool_calls=(LocalToolCall(name=tool, args=args),))
 
+    if _COURSE_RUN_RE.match(original):
+        return plan("study_course", {"action": "study"})
+    if _INBOX_STUDY_RE.match(original):
+        return plan("study_course", {"action": "ingest"})
+    m = _SKILL_CREATE_RE.match(original)
+    if m is not None:
+        topic = (m.group("t") or m.group("t2") or "").strip(" \"'")
+        return plan("skill_from_knowledge", {"action": "create", "topic": topic} if topic else {"action": "auto"})
+    m = _SKILL_ACTIVATE_RE.match(original)
+    if m is not None:
+        return plan("skill_from_knowledge", {"action": "activate", "name": m.group("n").strip(" \"'")})
+    m = _FILE_STUDY_RE.match(original)
+    if m is not None and not re.match(r"^(?:computer\s+science|компьютер\s+саенс|информатик\w*)$", m.group("n").strip(), re.I):
+        return plan("study_course", {"action": "study", "path": m.group("n").strip(" \"'")})
+    if _COURSE_STATUS_RE.match(original):
+        return plan("study_course", {"action": "status"})
+    if _COURSE_PAUSE_RE.match(original):
+        return plan("study_course", {"action": "pause"})
     m = _MEM_HISTORY_RE.match(original)
     if m is not None:
         back = {"вчера": 1, "позавчера": 2}.get((m.group("d") or "").lower(), 0)
@@ -1677,6 +1704,35 @@ def _match_new_skills(original: str) -> LocalActionPlan | None:
     return None
 
 
+_SKILL_CREATE_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:пожалуйста\s+)?(?:создай|сделай|оформи|собери|напиши)\s+"
+    r"(?:(?:себе|мне)\s+)?(?:навык|навыки|скилл|скиллы)\s+(?:из|на\s+основе|по)\s+"
+    r"(?:(?:изученн\w+|знани\w+|курс\w*|файл\w*|материал\w*|выученн\w+)\s*)(?:(?:про|по|о|об|обо)\s+)?(?P<t>.*?)[\s!.?]*$"
+    r"|^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:оформи|преврати)\s+(?:знания|изученное|курс)\s+(?:(?:про|по|о|об)\s+)?(?P<t2>.*?)\s+в\s+(?:навык|скилл)[\s!.?]*$",
+    re.I,
+)
+_SKILL_ACTIVATE_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:пожалуйста\s+)?(?:включи|активируй|запусти|подключи)\s+(?:навык|скилл)\s+(?P<n>.{2,80}?)[\s!.?]*$",
+    re.I,
+)
+_FILE_STUDY_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:пожалуйста\s+)?(?:изучи|изучай|выучи|прочитай|освой|разбери|загрузи)\s+"
+    r"(?:мой\s+|мои\s+)?(?:файл|файлы|курс|курсы|материал|материалы|документ|документы)\s+(?P<n>.{2,120}?)[\s!.?]*$", re.I,
+)
+_INBOX_STUDY_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:пожалуйста\s+)?(?:изучи|изучай|загрузи|прочитай)\s+"
+    r"(?:(?:всё|все)\s+)?(?:(?:новые|мои|загруженные)\s+)?(?:(?:папку|файлы|курсы|материалы)(?:\s+(?:с\s+курсами|курсов|загрузок))?|что\s+я\s+(?:загрузил|положил))[\s!.?]*$",
+    re.I,
+)
+_COURSE_RUN_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:пожалуйста\s+)?(?:начни|начинай|запусти|продолжи|продолжай|возобнови|давай|изучи|изучай)\s+"
+    r"(?:следующий\s+блок|следующий\s+урок|(?:курс|обучение)(?:\s+(?:по\s+)?(?:computer\s+science|компьютер\s+саенс|информатике|информатика|computer-science))?|"
+    r"computer\s+science|компьютер\s+саенс)[\s!.?]*$", re.I,
+)
+_CONTINUE_WORD_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:давай\s+)?(?:дальше|продолжай|продолжи|продолжить|вперед|вперёд|да|ага|"
+    r"погнали|поехали|играй|следующий|следующую|следующий\s+блок|далее)[\s!.?]*$", re.I,
+)
 _OPEN_ANY_RE = re.compile(
     r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис|jarvis)?[\s,]*(?:пожалуйста\s+)?(?:открой|открыть|запусти|запустить|стартани|включи|запускай|вруби)\s+"
     r"(?:мне\s+)?(?:программу\s+|приложение\s+|игру\s+)?(?P<app>[^,.!?]{2,40}?)(?:\s+пожалуйста)?[\s?.!]*$",
@@ -1759,6 +1815,15 @@ def match_local_action(
     original = _drop_wake_tokens(text.strip())
     if not original:
         return None
+    if _CONTINUE_WORD_RE.match(original):
+        from jarvis.plugins.tool import study_course  # noqa: PLC0415
+
+        if study_course.awaiting_continue():
+            # the course asked "continue?": this answer studies the next block (not Spotify)
+            return LocalActionPlan(
+                mode=LocalActionMode.DIRECT,
+                tool_calls=(LocalToolCall(name="study_course", args={"action": "study"}),),
+            )
 
     normalized = _normalize(original)
 

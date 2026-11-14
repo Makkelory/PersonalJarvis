@@ -37,3 +37,55 @@ def test_show_all_windows_still_goes_to_pc_control() -> None:
 
 def test_an_unknown_scene_is_not_hijacked() -> None:
     assert match_local_action("включи режим кино") is None
+
+
+@pytest.mark.parametrize("phrase,hit", [
+    ("Научись чему-нибудь новому про Spotify и запиши", True),
+    ("запомни что я люблю рок", True),
+    ("что ты помнишь про стим", True),
+    ("включи спотифай", False),
+])
+def test_memory_requests_are_not_captured_by_connector_skills(phrase: str, hit: bool) -> None:
+    from jarvis.brain.manager import _MEMORY_CUE_RE
+
+    assert bool(_MEMORY_CUE_RE.match(phrase)) is hit
+
+
+@pytest.mark.parametrize("phrase,action", [
+    ("статус курса", "status"), ("как идёт обучение", "status"), ("останови обучение", "pause"),
+])
+def test_course_status_and_pause_phrases(phrase: str, action: str) -> None:
+    assert _call(phrase) == ("study_course", {"action": action})
+
+
+@pytest.mark.parametrize("phrase", [
+    "начни курс computer science", "Начни курс Computer Science", "продолжи курс", "продолжай обучение",
+    "давай следующий блок", "начни обучение",
+])
+def test_course_phrases_run_the_study_tool_directly(phrase: str) -> None:
+    assert _call(phrase) == ("study_course", {"action": "study"})
+
+
+@pytest.mark.parametrize("phrase,args", [
+    ("изучи файл терминал windows", {"action": "study", "path": "терминал windows"}),
+    ("изучи курс powershell.txt", {"action": "study", "path": "powershell.txt"}),
+    ("Изучи материалы", {"action": "ingest"}),
+    ("загрузи новые курсы", {"action": "ingest"}),
+])
+def test_file_study_phrases(phrase: str, args: dict) -> None:
+    assert _call(phrase) == ("study_course", args)
+
+
+def test_the_builtin_course_name_is_not_taken_for_a_file() -> None:
+    assert _call("изучи курс computer science") == ("study_course", {"action": "study"})
+
+
+@pytest.mark.parametrize("phrase,expected", [
+    ("создай навык из знаний про терминал windows", ("skill_from_knowledge", {"action": "create", "topic": "терминал windows"})),
+    ("сделай навык на основе курса powershell", ("skill_from_knowledge", {"action": "create", "topic": "powershell"})),
+    ("оформи знания про сети в навык", ("skill_from_knowledge", {"action": "create", "topic": "сети"})),
+    ("создай навыки из изученного", ("skill_from_knowledge", {"action": "auto"})),
+    ("включи навык терминал windows", ("skill_from_knowledge", {"action": "activate", "name": "терминал windows"})),
+])
+def test_skill_from_knowledge_phrases(phrase: str, expected: tuple[str, dict]) -> None:
+    assert _call(phrase) == expected

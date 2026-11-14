@@ -220,6 +220,17 @@ class OllamaBrain:
         """
         if self._model:
             return self._model
+        if not need_vision:
+            # Fork fix (2026-11-14): an adapter built without a model (chat turns, background jobs)
+            # still honours [brain.providers.ollama].model instead of picking "the smallest download",
+            # which also lost the per-model options (num_ctx, think) and truncated the prompt.
+            try:
+                provider = cfg.load_config().brain.providers.get("ollama")
+                configured = (getattr(provider, "model", "") or "").strip()
+            except Exception:  # noqa: BLE001 - fall through to discovery
+                configured = ""
+            if configured:
+                return configured
         profile = (need_tools, need_vision)
         if profile in self._discovered:
             return self._discovered[profile]

@@ -6,6 +6,12 @@ import pytest
 
 from jarvis.brain.local_action_gate import match_local_action
 
+
+@pytest.fixture(autouse=True)
+def _no_waiting_course(tmp_path, monkeypatch) -> None:
+    """The gate reads data/courses.json of the working folder: run against an empty one."""
+    monkeypatch.chdir(tmp_path)
+
 _LIVE = ("open_app", "spotify_control", "steam_control", "happ_vpn", "pc_control", "close_app")
 
 

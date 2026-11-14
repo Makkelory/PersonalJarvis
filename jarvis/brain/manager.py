@@ -531,6 +531,13 @@ def get_tier_default_model(tier: str, provider: str) -> str | None:
     return TIER_DEFAULTS_BY_PROVIDER.get(tier, {}).get(provider)
 
 
+_MEMORY_CUE_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:научись|выучи|изучи|разузнай|узнай\s+и\s+запиши|запомни|запиши|"
+    r"что\s+ты\s+(?:помнишь|знаешь)|вспомни)(?![\w])",
+    re.I,
+)
+
+
 def _coerce_main_brain_provider(provider: str | None, *fallbacks: str | None) -> str:
     """Return a main-brain-capable provider.
 
@@ -5705,6 +5712,10 @@ class BrainManager:
         self._skill_match_band = "none"
         self._skill_match_class = ""
         self._skill_meta_turn = ""
+        # Fork addition: "научись/запомни/запиши/вспомни ..." is a request for the memory tools
+        # even when it names a service ("... про Spotify"); a connector skill must not capture it.
+        if _MEMORY_CUE_RE.match((user_text or "").strip()):
+            return None
         try:
             from jarvis.skills import guards, match_eval, match_log
             from jarvis.skills.autofire_policy import classify, may_capture
@@ -13780,6 +13791,8 @@ _LOCAL_TOOL_TIMEOUTS_S: dict[str, float] = {
     "app_catalog": 90.0,
     "window_control": 20.0,
     "browser_control": 20.0,
+    "study_course": 420.0,
+    "skill_from_knowledge": 420.0,
     "scenes": 150.0,
     "list_apps": 60.0,
     "file_ops": 45.0,
@@ -13802,6 +13815,7 @@ _PINNED_TOOL_NAMES = frozenset({
     "spotify-control", "steam-control", "happ-vpn",
     "window_control", "app_catalog", "window-control", "app-catalog",
     "browser_control", "memory_notes", "scenes", "browser-control", "memory-notes",
+    "study_course", "study-course", "skill_from_knowledge", "skill-from-knowledge",
 })
 
 #: Chars per token for the size estimate. Deliberately low: tool schemas are

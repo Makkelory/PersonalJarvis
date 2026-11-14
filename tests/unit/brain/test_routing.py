@@ -2025,6 +2025,8 @@ def test_router_tools_is_pure_dispatcher_set() -> None:
             "browser-control",
             "memory-notes",
             "scenes",
+            "study-course",
+            "skill-from-knowledge",
         }
     )
     assert ROUTER_TOOLS == expected, (

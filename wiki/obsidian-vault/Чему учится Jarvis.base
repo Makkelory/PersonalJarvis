@@ -1,0 +1,90 @@
+filters:
+  or:
+    - note.type == "jarvis-knowledge"
+    - note.type == "jarvis-course"
+    - note.type == "jarvis-playbook"
+    - note.type == "jarvis-skill"
+    - note.type == "jarvis-memory"
+properties:
+  file.name:
+    displayName: Заметка
+  note.type:
+    displayName: Вид
+  note.course:
+    displayName: Курс
+  note.module:
+    displayName: Модуль
+  note.block:
+    displayName: Блок
+  note.done:
+    displayName: Изучено
+  note.total:
+    displayName: Всего
+  note.state:
+    displayName: Состояние
+  file.mtime:
+    displayName: Изменена
+views:
+  - type: table
+    name: Всё, чему учится Jarvis
+    order:
+      - file.name
+      - note.type
+      - note.course
+      - note.module
+      - file.mtime
+    sort:
+      - property: file.mtime
+        direction: DESC
+  - type: table
+    name: Знания по курсам
+    filters:
+      and:
+        - note.type == "jarvis-knowledge"
+    groupBy:
+      property: note.course
+      direction: ASC
+    order:
+      - note.block
+      - file.name
+      - note.module
+      - file.mtime
+    sort:
+      - property: note.block
+        direction: ASC
+  - type: table
+    name: Курсы и прогресс
+    filters:
+      and:
+        - note.type == "jarvis-course"
+    order:
+      - file.name
+      - note.done
+      - note.total
+      - note.state
+      - file.mtime
+  - type: table
+    name: Справочники приёмов
+    filters:
+      and:
+        - note.type == "jarvis-playbook"
+    order:
+      - file.name
+      - note.course
+      - file.mtime
+  - type: table
+    name: Навыки
+    filters:
+      and:
+        - note.type == "jarvis-skill"
+    order:
+      - file.name
+      - file.mtime
+  - type: table
+    name: Память
+    filters:
+      and:
+        - note.type == "jarvis-memory"
+    order:
+      - file.name
+      - file.mtime
