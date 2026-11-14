@@ -1249,6 +1249,38 @@ _HAPP_STATUS_RE = re.compile(
 )
 
 
+_STEAM_FLEX_STATES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(pattern, re.I), state)
+    for pattern, state in (
+        (r"не\s+в\s+сети|офф?лайн|offline", "не в сети"),
+        (r"н[еи]в[еи]дим\w*|invisible", "невидимка"),
+        (r"нет\s+на\s+месте|отошёл|отошел|афк|away", "нет на месте"),
+        (r"не\s+беспокоить|занят\w*|busy", "не беспокоить"),
+        (r"в\s+сети|онлайн|online", "в сети"),
+    )
+)
+_STEAM_FLEX_SKIP = re.compile(r"почему|зачем|как\s|кто\s|сколько|что\s|когда|где\s", re.I)
+
+
+def _steam_status_flex(text: str) -> str | None:
+    """Free-word Steam status commands ("статус друзей в стиме в сети",
+    "поставь в стиме невидимка", "статус стим нет на месте").
+
+    Needs the word Steam, "статус" or an imperative, one state word, a short
+    sentence and no question word: talk ABOUT Steam statuses is left to the model.
+    """
+    if "?" in text or len(text.split()) > 10 or _STEAM_FLEX_SKIP.search(text):
+        return None
+    if not re.search(_STEAM_WORD, text):
+        return None
+    if not re.search(r"статус|поставь|смени|измени|переключи|стань|будь|сделай", text):
+        return None
+    for pattern, state in _STEAM_FLEX_STATES:
+        if pattern.search(text):
+            return state
+    return None
+
+
 def _match_apps(text: str, original: str) -> LocalActionPlan | None:
     """Plans for Spotify, Steam and Happ phrases."""
 
@@ -1261,6 +1293,9 @@ def _match_apps(text: str, original: str) -> LocalActionPlan | None:
     for pattern, action in _SPOTIFY_ACTIONS:
         if pattern.match(text):
             return plan("spotify_control", {"action": action})
+    flex_state = _steam_status_flex(text)
+    if flex_state is not None:
+        return plan("steam_control", {"action": "friend_status", "state": flex_state})
     st = _STEAM_STATUS_RE.match(text)
     if st is not None:
         state = next(g for g in (st.group("s1"), st.group("s2"), st.group("s3")) if g)

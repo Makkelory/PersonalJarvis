@@ -9002,17 +9002,26 @@ class BrainManager:
         override = _TURN_OVERRIDE.get()
         exec_config: dict[str, Any] | None = None
         if override is not None:
-            # Typed chat (fork change 2026-11-14): the deterministic DIRECT path
-            # now serves chat too, so "открой блокнот" behaves the same typed or
-            # spoken instead of relying on the model to call a tool. Safety is
-            # unchanged: the executor still receives the chat's tool_context
-            # (approval surface, ``chat_read_only`` plan mode) and applies its
-            # own risk-tier approval. Only DIRECT plans run here (see below);
-            # screen/Computer-Use plans stay with the chat's own tool set.
-            exec_config = dict(getattr(override, "tool_context", None) or {})
-            if exec_config.get("chat_read_only"):
+            # Typed chat (fork change 2026-11-14): the deterministic DIRECT path serves
+            # the interactive agent/Jarvis chat too, so "открой блокнот" behaves the same
+            # typed or spoken instead of relying on the model to call a tool. Safety is
+            # unchanged: the executor receives the chat's tool_context (approval surface,
+            # ``chat_read_only`` plan mode) and applies its own risk-tier approval.
+            # Only chats that route approvals to the interactive card qualify: a scoped
+            # surface (society browser, local-models assistant, bare overrides) keeps
+            # "its own tools and approval context", so the global desktop shortcut can
+            # never hijack "open this in my agent browser".
+            chat_ctx = dict(getattr(override, "tool_context", None) or {})
+            if (
+                chat_ctx.get("approval_surface") != "interactive"
+                or chat_ctx.get("tool_origin") != "agent-chat"
+            ):
+                log.info("[LOCAL_ACTION] skipped: scoped turn override (trace=%s)", trace_id)
+                return None
+            if chat_ctx.get("chat_read_only"):
                 log.info("[LOCAL_ACTION] skipped: plan mode (trace=%s)", trace_id)
                 return None
+            exec_config = chat_ctx
         local_cfg = getattr(self._config, "local_action", None)
         if local_cfg is not None and not getattr(local_cfg, "enabled", True):
             log.info("[LOCAL_ACTION] skipped: local_action.enabled=false (trace=%s)", trace_id)
@@ -9071,7 +9080,9 @@ class BrainManager:
                             dict(call.args),
                             user_utterance=user_text,
                             trace_id=tid,
-                            config_snapshot=exec_config,
+                            # only the typed chat carries a tool context; the voice path
+                            # keeps its original call shape (and any executor double)
+                            **({"config_snapshot": exec_config} if exec_config is not None else {}),
                         ),
                         timeout=call_timeout_s,
                     )

@@ -110,6 +110,7 @@ import numpy as np
 
 from jarvis.core.protocols import AudioChunk
 from jarvis.plugins.wake.vosk_native import build_recognizer, native_call
+from jarvis.speech.wake_aliases import grammar_variants
 from jarvis.speech.wake_constants import (
     WAKE_PREFIXES,
     normalize_phrase_for_match,
@@ -814,7 +815,8 @@ class VoskKwsProvider:
         self._competition_grammar: str | None = None
         if has_prefix and raw_tokens:
             self._competition_grammar = json.dumps(
-                [self._phrase.lower(), f"{raw_tokens[0]} [unk]", "[unk]"]
+                [self._phrase.lower(), f"{raw_tokens[0]} [unk]", "[unk]"],
+                ensure_ascii=False,  # Vosk does not decode \\uXXXX: Cyrillic must go as-is
             )
         # One-shot flag for the "competition degraded to its static grammar"
         # warning in ``_shape_competition_ok`` (BUG-163).
@@ -853,6 +855,10 @@ class VoskKwsProvider:
         self._stock_target = 2
         self._replenish_task: asyncio.Task[None] | None = None
         self._grammar_words = [w for w in self._phrase.lower().split() if w]
+        # Sound-alike spellings of a one-word wake phrase that are also offered to the
+        # stage-one grammar (see jarvis/speech/wake_aliases.py); empty for prefixed phrases.
+        self._phrase_variants: list[str] = list(grammar_variants(self._phrase))
+        self._variant_words = set(self._grammar_words) | set(self._phrase_variants)
         # Duck-typing parity with OpenWakeWordProvider: the pipeline's ready
         # log reads ``_keywords`` and ``_threshold`` off whatever detector is
         # armed. The confirm ratio is the closest analogue of a threshold.
@@ -934,7 +940,12 @@ class VoskKwsProvider:
         return model
 
     def _new_grammar_rec(self, path: str | None = None) -> Any:
-        grammar = json.dumps([self._phrase.lower(), "[unk]"])
+        # ensure_ascii=False: Vosk does not decode \\uXXXX escapes, so a Cyrillic wake
+        # word used to arrive as the literal text "\\u0434..." and was reported as
+        # "missing in vocabulary" (the phrase could never be heard).
+        grammar = json.dumps(
+            [self._phrase.lower(), *self._phrase_variants, "[unk]"], ensure_ascii=False
+        )
         return build_recognizer(
             self._ensure_model(path), self._sample_rate, grammar
         )
@@ -1261,10 +1272,10 @@ class VoskKwsProvider:
         if rec.AcceptWaveform(pcm):
             res = _parse_recognizer_json(rec.Result(), where="grammar_hit.Result")
             text = res.get("text", "")
-            if self._phrase.lower() in text:
+            if self._phrase.lower() in text or any(v in text for v in self._phrase_variants):
                 words = [
                     w for w in res.get("result", [])
-                    if w.get("word") in self._grammar_words
+                    if w.get("word") in self._variant_words
                 ]
                 conf = min((w.get("conf", 0.0) for w in words), default=0.0)
                 return (True, conf)
@@ -1272,7 +1283,9 @@ class VoskKwsProvider:
         partial = _parse_recognizer_json(
             rec.PartialResult(), where="grammar_hit.PartialResult"
         ).get("partial", "")
-        if partial and self._phrase.lower() in partial:
+        if partial and (
+            self._phrase.lower() in partial or any(v in partial for v in self._phrase_variants)
+        ):
             return (False, 1.0)  # partials carry no conf; the confirm decides
         return None
 
@@ -1565,11 +1578,18 @@ class VoskKwsProvider:
                 when the decode ran over a trailing cut of the window.
                 """
                 tokens = self._grammar_words
+                accepted = [tokens] + [[v] for v in self._phrase_variants]
                 result = [w for w in res.get("result", []) if isinstance(w, dict)]
                 best: tuple[list[dict], float] | None = None
-                for i in range(len(result) - len(tokens) + 1):
-                    run = result[i : i + len(tokens)]
-                    if [w.get("word") for w in run] != tokens:
+                for i in range(len(result)):
+                    run = None
+                    for candidate in accepted:
+                        if i + len(candidate) <= len(result) and [
+                            w.get("word") for w in result[i : i + len(candidate)]
+                        ] == candidate:
+                            run = result[i : i + len(candidate)]
+                            break
+                    if run is None:
                         continue
                     run_conf = min(float(w.get("conf", 0.0)) for w in run)
                     if run_conf < self._min_final_conf:
@@ -1815,7 +1835,7 @@ class VoskKwsProvider:
             # grammar still runs — a weaker but valid competition.
             set_grammar = getattr(rec, "SetGrammar", None)
             if callable(set_grammar):
-                set_grammar(json.dumps(alternatives))
+                set_grammar(json.dumps(alternatives, ensure_ascii=False))
             elif not getattr(self, "_warned_static_competition", False):
                 # Say so ONCE, at WARNING. The static grammar is a measurably
                 # weaker judge (bench 2026-08-22: 13 false fires on 40
@@ -2211,7 +2231,7 @@ def vosk_model_supports_phrase(model_path: str, phrase: str) -> bool:
             KaldiRecognizer,
             Model(model_path),
             16_000,
-            json.dumps([phrase.lower(), "[unk]"]),
+            json.dumps([phrase.lower(), "[unk]"], ensure_ascii=False),
         )
     except Exception:  # noqa: BLE001 — probe failure must not reject a real word
         return True
