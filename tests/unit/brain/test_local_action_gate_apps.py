@@ -128,3 +128,23 @@ def test_free_word_steam_status_ignores_questions_and_other_talk(text: str) -> N
     plan = match_local_action(text, live_tool_names=_LIVE)
 
     assert plan is None or plan.tool_calls[0].name != "steam_control"
+
+
+@pytest.mark.parametrize("phrase", ["открой стим", "Джарвис, запусти стим", "включи steam", "открой игру в стиме"])
+def test_opening_steam_without_a_game_just_opens_the_client(phrase: str) -> None:
+    plan = match_local_action(phrase)
+
+    assert plan is not None
+    assert [(c.name, c.args) for c in plan.tool_calls] == [("open_app", {"app_name": "steam"})]
+
+
+@pytest.mark.parametrize(
+    "phrase", ["открой игру Dota 2 в стиме", "открой в стиме Dota 2", "открой стим игру Dota 2", "запусти Dota 2 в стиме"],
+)
+def test_a_named_steam_game_is_launched(phrase: str) -> None:
+    plan = match_local_action(phrase)
+
+    assert plan is not None
+    call = plan.tool_calls[0]
+    assert call.name == "steam_control"
+    assert call.args == {"action": "run", "game": "Dota 2"}

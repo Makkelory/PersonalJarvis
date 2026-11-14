@@ -1200,7 +1200,15 @@ _STEAM_INSTALL_RE = re.compile(
     re.I,
 )
 _STEAM_RUN_RE = re.compile(
-    _WAKE_PREFIX + r"(?:запусти|включи)\s+(?P<g>[^,]+?)\s+(?:в|через)\s+" + _STEAM_WORD, re.I,
+    _WAKE_PREFIX + r"(?:запусти|включи|открой)\s+(?:игру\s+)?(?P<g>[^,]+?)\s+(?:в|через)\s+" + _STEAM_WORD, re.I,
+)
+# "открой в стиме Dota 2" / "открой стим игру Dota 2": the game comes after Steam.
+_STEAM_RUN_AFTER_RE = re.compile(
+    _WAKE_PREFIX + r"(?:запусти|включи|открой)\s+(?:(?:в|через)\s+" + _STEAM_WORD + r"|" + _STEAM_WORD + r")\s+(?:игру\s+)?(?P<g>[^,]+?)[\s?.!]*$", re.I,
+)
+# Just opening the client: "открой стим", "открой игру в стиме" (no game named).
+_STEAM_OPEN_RE = re.compile(
+    _WAKE_PREFIX + r"(?:запусти|включи|открой|открыть|запустить)\s+(?:(?:игру|игры|библиотеку)\s+(?:в|через)\s+)?(?:(?:в|через)\s+)?" + _STEAM_WORD + r"(?:\s+(?:игру|игры))?[\s?.!]*$", re.I,
 )
 _STEAM_DOWNLOADS_RE = re.compile(
     _WAKE_PREFIX + r"(?:(?:открой|покажи)\s+загрузки\s+(?:в\s+)?(?:" + _STEAM_WORD + r"|стима)|что\s+(?:сейчас\s+)?качается\s+в\s+" + _STEAM_WORD + r")",
@@ -1319,7 +1327,9 @@ def _match_apps(text: str, original: str) -> LocalActionPlan | None:
     inst = _STEAM_INSTALL_RE.match(original)
     if inst is not None:
         return plan("steam_control", {"action": "install", "game": inst.group("g").strip()})
-    run = _STEAM_RUN_RE.match(original)
+    if _STEAM_OPEN_RE.match(text):
+        return plan("open_app", {"app_name": "steam"})
+    run = _STEAM_RUN_RE.match(original) or _STEAM_RUN_AFTER_RE.match(original)
     if run is not None:
         return plan("steam_control", {"action": "run", "game": run.group("g").strip()})
     if _HAPP_PING_RE.match(text):
