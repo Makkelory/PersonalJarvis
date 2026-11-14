@@ -46,6 +46,10 @@ class LocalActionPlan:
     #: human-readable rejection message in the user's language that
     #: ``manager.py`` forwards verbatim to TTS.
     response_text: str | None = None
+    #: Fork addition: a queue of several commands spoken in one breath ("открой стим, включи музыку ...").
+    #: The fast path runs every call in order and does not stop at the first failing one.
+    compound: bool = False
+    steps: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -1853,7 +1857,88 @@ def _drop_wake_tokens(text: str) -> str:
 
 
 
+# ---------------------------------------------------------------------------
+# Fork addition: a stream of tasks in one utterance
+#
+# "открой стим, открой проводник, включи музыку, включи радио по этому треку, поставь громкость 60%"
+# The recogniser writes lower-case text without punctuation, so the boundaries are the command verbs
+# themselves ("... стим открой проводник включи ..."). The utterance is only treated as a queue when EVERY
+# segment is a command the gate already understands; anything else goes the normal way unchanged.
+# ---------------------------------------------------------------------------
+_CMD_VERBS = frozenset({
+    "открой", "открыть", "запусти", "запустить", "включи", "выключи", "выруби", "вруби", "закрой", "закрыть",
+    "поставь", "сделай", "найди", "покажи", "переключи", "останови", "перенеси", "перемести", "сверни", "разверни",
+    "нажми", "введи", "напиши", "набери", "скачай", "установи", "загрузи", "подключись", "отключись", "подключи",
+    "отключи", "активируй", "сохрани", "создай", "смени", "измени", "добавь", "убери", "увеличь", "уменьши",
+    "прибавь", "убавь", "пропусти", "вернись", "перейди", "переключись", "изучи", "продолжи", "запомни",
+    "прижми", "расположи", "заблокируй", "перезагрузи", "возобнови", "приостанови", "помоги", "проверь",
+    "посчитай", "напомни", "засеки", "поищи", "загугли", "дай", "верни",
+})
+_OPEN_LIKE = frozenset({"открой", "запусти", "закрой", "включи", "выключи", "сверни", "разверни", "переключись"})
+_SEP_WORDS = frozenset({"и", "а", "потом", "затем", "дальше", "далее", "следом", "также", "ещё", "еще", "теперь", "сначала",
+                        "после", "этого", "же", "да", "ну", "пожалуйста", "тоже"})
+_SPLIT_RE = re.compile(r"\s*(?:,|;|\bа\s+потом\b|\bпосле\s+этого\b|\bпотом\b|\bзатем\b|\bследом\b|\bа\s+также\b)\s*", re.I)
+_AND_LIST_RE = re.compile(r"^(?P<v>открой|запусти|закрой|включи|выключи)\s+(?P<a>[^,]+?)\s+и\s+(?P<b>[^,]+)$", re.I)
+_MAX_STEPS = 12
+
+
+def _trim_separators(words: list[str]) -> list[str]:
+    while words and words[0].lower() in _SEP_WORDS:
+        words = words[1:]
+    while words and words[-1].lower() in _SEP_WORDS:
+        words = words[:-1]
+    return words
+
+
+def split_into_commands(text: str) -> list[str]:
+    """Cut an utterance into command segments at punctuation, "потом/затем" and at every command verb."""
+    segments: list[str] = []
+    last_verb = ""
+    for part in _SPLIT_RE.split(text.strip()):
+        words = part.split()
+        if not words:
+            continue
+        bounds = [0] + [i for i, w in enumerate(words) if i > 0 and w.lower().strip(".,!?") in _CMD_VERBS]
+        bounds.append(len(words))
+        for start, end in zip(bounds, bounds[1:], strict=False):
+            chunk = _trim_separators(words[start:end])
+            if not chunk:
+                continue
+            first = chunk[0].lower().strip(".,!?")
+            if first in _CMD_VERBS:
+                last_verb = first if first in _OPEN_LIKE else ""
+            elif last_verb and len(chunk) <= 4:
+                chunk = [last_verb, *chunk]  # "открой стим, проводник, блокнот": the verb carries over
+            segments.append(" ".join(chunk))
+    expanded: list[str] = []
+    for seg in segments:
+        m = _AND_LIST_RE.match(seg)
+        if m is not None:
+            expanded += [f"{m.group('v')} {m.group('a')}", f"{m.group('v')} {m.group('b')}"]
+        else:
+            expanded.append(seg)
+    return expanded
+
+
 def match_local_action(
+    text: str,
+    lang: Literal["de", "en"] = "de",
+    *,
+    _registry: _CapabilityRegistryLike | None = _SENTINEL,  # type: ignore[assignment]
+    live_tool_names: Sequence[str] = (),
+) -> LocalActionPlan | None:
+    """Plan for one command, or for a queue of commands spoken in one breath (see split_into_commands)."""
+    cleaned = _drop_wake_tokens(text.strip())
+    segments = split_into_commands(cleaned) if cleaned else []
+    if 2 <= len(segments) <= _MAX_STEPS:
+        plans = [_match_single(seg, lang, _registry=_registry, live_tool_names=live_tool_names) for seg in segments]
+        if all(p is not None and p.mode == LocalActionMode.DIRECT and p.tool_calls for p in plans):
+            calls = tuple(call for p in plans for call in p.tool_calls)  # type: ignore[union-attr]
+            return LocalActionPlan(mode=LocalActionMode.DIRECT, tool_calls=calls, compound=True, steps=tuple(segments))
+    return _match_single(text, lang, _registry=_registry, live_tool_names=live_tool_names)
+
+
+def _match_single(
     text: str,
     lang: Literal["de", "en"] = "de",
     *,
