@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import urllib.parse
 from html.parser import HTMLParser
@@ -634,14 +635,28 @@ def _read_document(path: Path) -> str:
 _HEADING_RE = re.compile(r"^(?:#{1,4}\s+\S|(?:глава|урок|раздел|модуль|тема|lesson|chapter|part|section)\s+\S)", re.I)
 
 
+def _is_heading(line: str) -> bool:
+    text = line.strip()
+    if not text or _COVER_SKIP.search(text):
+        return False
+    if _HEADING_RE.match(text):
+        return True
+    letters = [c for c in text if c.isalpha()]
+    return 12 <= len(text) <= 80 and len(letters) >= 8 and sum(c.isupper() for c in letters) / len(letters) >= 0.8
+
+
 def _chunk_text(text: str, target: int = 3500, minimum: int = 1200) -> list[tuple[str, str]]:
-    """Split a document into study blocks of ~target chars, preferring heading boundaries."""
+    """Split a document into study blocks of ~target chars: at headings, else at the end of a sentence.
+
+    A block's title is the first heading inside it, else "Часть N" (a mid-sentence line makes a poor name).
+    """
     lines = [ln.rstrip() for ln in text.replace("\r\n", "\n").split("\n")]
     chunks: list[list[str]] = [[]]
     size = 0
     for ln in lines:
-        heading = bool(_HEADING_RE.match(ln.strip()))
-        if (size >= target) or (heading and size >= minimum):
+        heading = _is_heading(ln)
+        sentence_end = ln.rstrip().endswith((".", "!", "?", "»", ")"))
+        if (heading and size >= minimum) or (size >= target and sentence_end) or size >= int(target * 1.5):
             chunks.append([])
             size = 0
         chunks[-1].append(ln)
@@ -653,8 +668,8 @@ def _chunk_text(text: str, target: int = 3500, minimum: int = 1200) -> list[tupl
             if out and body:
                 out[-1] = (out[-1][0], out[-1][1] + "\n" + body)
             continue
-        first = next((ln.strip(" #\t") for ln in part if ln.strip()), "Фрагмент")
-        out.append((first[:60].strip(" .:-") or "Фрагмент", body))
+        head = next((ln.strip(" #\t") for ln in part if _is_heading(ln)), "")
+        out.append((head[:60].strip(" .:-") or f"Часть {len(out) + 1}", body))
     return out
 
 
@@ -666,6 +681,13 @@ def _find_file(name: str) -> Path | None:
     candidate = Path(name)
     if candidate.is_file():
         return candidate
+    norm = name.replace("\\", "/")
+    rel = norm[2:] if norm.startswith("./") else norm
+    if rel.startswith(".jarvis/drops/"):
+        # A file dropped into the chat: the reference is relative to the chat's own workspace folder.
+        guess = Path(os.environ.get("LOCALAPPDATA", "")) / "Jarvis" / "chat-workspace" / rel
+        if guess.is_file():
+            return guess
     _INBOX.mkdir(parents=True, exist_ok=True)
     files = [p for p in _INBOX.rglob("*") if p.is_file() and p.suffix.lower() in _DOC_SUFFIXES]
     low = name.lower().replace("ё", "е")
@@ -678,19 +700,44 @@ def _find_file(name: str) -> Path | None:
     return None
 
 
-def _file_key(path: Path) -> str:
-    return "file-" + re.sub(r"[^\w]+", "-", path.stem.lower()).strip("-")
+_HASH_STEM = re.compile(r"^(?:\d{8}-\d{6}-)?[0-9a-f]{16,}$", re.I)
+_COVER_SKIP = re.compile(r"министерств|университет|факультет|кафедр|учебное пособие|издательств|\bуд[кц]\b|\bббк\b|рецензент", re.I)
+
+
+def _display_name(path: Path, text: str) -> str:
+    """The file's stem, or - for a hash-named attachment - the cover title ("ПСИХОЛОГИЯ. ВВОДНЫЙ КУРС")."""
+    if not _HASH_STEM.match(path.stem):
+        return path.stem[:60]
+    try:
+        from pypdf import PdfReader  # noqa: PLC0415
+
+        meta = (PdfReader(str(path)).metadata.title or "").strip() if path.suffix.lower() == ".pdf" else ""
+        if len(meta) >= 4:
+            return meta[:60]
+    except Exception:  # noqa: BLE001 - the cover heuristic below still applies
+        pass
+    for line in [ln.strip() for ln in text.splitlines() if ln.strip()][:40]:
+        letters = [c for c in line if c.isalpha()]
+        if 10 <= len(line) <= 70 and letters and sum(c.isupper() for c in letters) / len(letters) >= 0.7 and not _COVER_SKIP.search(line):
+            return line.title()[:60]
+    return "Документ " + path.stem[-6:]
+
+
+def _file_key(path: Path, title: str = "") -> str:
+    return "file-" + re.sub(r"[^\w]+", "-", (title or path.stem).lower()).strip("-")
 
 
 def _ingest_file(path: Path, blob: dict[str, Any]) -> str:
     """Register ``path`` as a course (blocks = chunks); returns its key. Existing courses are kept."""
-    key = _file_key(path)
+    text = _read_document(path)
+    title = _display_name(path, text)
+    key = _file_key(path, title)
     if key in blob and blob[key].get("size") == path.stat().st_size:
         return key
-    chunks = _chunk_text(_read_document(path))
+    chunks = _chunk_text(text)
     if not chunks:
         raise ValueError(f"В файле «{path.name}» нет читаемого текста.")
-    module = path.stem[:60]
+    module = title
     blocks = [{"id": f"1.{i}", "module": module, "title": title} for i, (title, _body) in enumerate(chunks, start=1)]
     _TEXTS.mkdir(parents=True, exist_ok=True)
     (_TEXTS / f"{key}.json").write_text(
@@ -711,7 +758,15 @@ def _inbox_files() -> list[Path]:
 def _pick_key(requested: str, blob: dict[str, Any]) -> str:
     """The course to study: the named one, else the one waiting for 'continue', else the latest unfinished."""
     if requested:
-        return _slug(requested)
+        direct = _slug(requested)
+        if direct in blob or direct in SYLLABI:
+            return direct
+        words = [w[: max(4, len(w) - 2)] for w in re.findall(r"\w{4,}", requested.lower().replace("ё", "е"))]
+        for key, course in blob.items():
+            hay = f"{key} {course.get('title', '')}".lower().replace("ё", "е")
+            if words and any(w in hay for w in words):
+                return key
+        return direct
     waiting = [(c.get("awaiting") or 0, k) for k, c in blob.items() if isinstance(c, dict) and c.get("awaiting")]
     if waiting:
         return max(waiting)[1]

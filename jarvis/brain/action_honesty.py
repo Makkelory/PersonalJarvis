@@ -474,6 +474,39 @@ def has_false_completion_claim(text: str) -> bool:
     return True
 
 
+# Fork addition: claims about STUDYING and WRITING NOTES. The small local model once announced, over many turns, that a
+# psychology course was being studied "in the background" and written to Obsidian while no tool had run at all (the real
+# study tool says "N из M блоков" and creates files, so a claim without a tool call is simply false). Matched on the
+# normalised text (й->и, ё->е). Applied only when the turn executed NO tool.
+_RU_STUDY_CLAIM_RE = re.compile(
+    r"(?:"
+    r"\bя\s+(?:уже\s+|только\s+что\s+|успешно\s+|сейчас\s+)?"  # i18n-allow: RU
+    r"(?:создал|записал|добавил|изучил|прошел|выучил|законспектировал|обновил)[аи]?\b|"  # i18n-allow: RU
+    r"\bя\s+(?:сейчас\s+|уже\s+|теперь\s+)?"  # i18n-allow: RU
+    r"(?:продолжаю|изучаю|учу|записываю|конспектирую|прохожу|перехожу|разбираю|"  # i18n-allow: RU
+    r"изучу|выучу|запишу|законспектирую)\b|"  # i18n-allow: RU
+    r"\b(?:теперь|сейчас|далее)\s+(?:изучу|выучу|запишу|законспектирую|буду\s+изучать|буду\s+записывать)\b|"  # i18n-allow: RU
+    r"\bперехожу\s+к\b|"  # i18n-allow: RU
+    r"\b(?:изучение|обучение|курс)\s+(?:идет|продолжается|запущен\w*|начат\w*|в\s+процессе)\b|"  # i18n-allow: RU
+    r"\b(?:идет|идут|работает)\s+(?:автоматическое\s+|автоматически\s+)?(?:изучение|обучение)\b|"  # i18n-allow: RU
+    r"\b(?:материал|курс|блок|раздел|тема)\s+(?:разбирается|изучается|изучен\w*|записан\w*|"  # i18n-allow: RU
+    r"законспектирован\w*)\b|"  # i18n-allow: RU
+    r"\bуже\s+(?:изучен|записан|пройден)\w*\b"  # i18n-allow: RU
+    r")"
+)
+
+_RU_STUDY_NOT_STARTED = (
+    "Обучение не запущено: я не вызывал для этого ни одного инструмента, поэтому ничего не изучено и не записано. "  # i18n-allow: RU
+    "Приложите файл в чат и скажите «изучи этот курс», или скажите «изучи файл <имя>» для файла из папки "  # i18n-allow: RU
+    "data/courses_inbox."  # i18n-allow: RU
+)
+
+
+def has_false_study_claim(text: str) -> bool:
+    """A Russian claim of studying / note-writing (call only when no tool ran this turn)."""
+    return bool(_RU_STUDY_CLAIM_RE.search(_normalize(text)))
+
+
 def has_unbacked_action_claim(text: str) -> bool:
     """Either shape of an action claim that has no execution evidence."""
     return has_deferred_action_claim(text) or has_false_completion_claim(text)
@@ -496,6 +529,8 @@ def replace_unbacked_action_claim(
     """Drop an unbacked promise without ever dropping a delivered answer."""
     if executed_tools:
         return text
+    if has_false_study_claim(text):
+        return _RU_STUDY_NOT_STARTED
     if has_false_completion_claim(text):
         return action_not_started_phrase(language)
     analysis = _analyse(text)
@@ -510,6 +545,7 @@ __all__ = [
     "action_not_started_phrase",
     "has_deferred_action_claim",
     "has_false_completion_claim",
+    "has_false_study_claim",
     "has_unbacked_action_claim",
     "replace_unbacked_action_claim",
 ]

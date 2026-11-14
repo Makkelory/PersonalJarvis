@@ -370,3 +370,42 @@ def test_a_generated_skill_loses_its_schedule_and_keyword_triggers(tmp_path) -> 
     pattern = re.compile(meta["triggers"][0]["pattern"])
     assert pattern.match("используй навык windows-3") and not pattern.search("открой папку с файлами")
     assert text.endswith("# Цель\nШаги\n")
+
+
+def test_chunks_cut_at_headings_or_sentence_ends_and_get_readable_titles() -> None:
+    from jarvis.plugins.tool import study_course as sc
+
+    body = "\n".join(["Это предложение про психику человека."] * 120)
+    text = "ТЕМА 1. ПСИХОЛОГИЯ КАК НАУКА\n" + body + "\nТЕМА 2. ОСНОВНЫЕ НАПРАВЛЕНИЯ\n" + body
+
+    chunks = sc._chunk_text(text)
+
+    titles = [t for t, _b in chunks]
+    assert "ТЕМА 1. ПСИХОЛОГИЯ КАК НАУКА" in titles and "ТЕМА 2. ОСНОВНЫЕ НАПРАВЛЕНИЯ" in titles
+    assert all(len(b) < 5400 for _t, b in chunks)
+    assert all(not t[:1].islower() for t in titles)  # no more mid-sentence fragments as names
+
+
+def test_a_hash_named_attachment_gets_its_cover_title(tmp_path) -> None:
+    from jarvis.plugins.tool import study_course as sc
+
+    path = tmp_path / "20261114-225300-e1994a88119c14dd634d638c900eaebd.pdf"
+    path.write_bytes(b"%PDF-1.4 not a real pdf")
+    cover = "МИНИСТЕРСТВО СЕЛЬСКОГО ХОЗЯЙСТВА\nС. П. Сенющенков\nПСИХОЛОГИЯ. ВВОДНЫЙ КУРС\nУчебное пособие\n"
+
+    assert sc._display_name(path, cover) == "Психология. Вводный Курс"
+    assert sc._display_name(tmp_path / "Мой курс.txt", cover) == "Мой курс"
+
+
+def test_a_course_is_found_by_part_of_its_name_and_chat_drops_resolve(tmp_path, monkeypatch) -> None:
+    from jarvis.plugins.tool import study_course as sc
+
+    blob = {"file-психология-вводный-курс": {"title": "Психология Вводный курс", "blocks": [], "done": {}}}
+    assert sc._pick_key("психологии", blob) == "file-психология-вводный-курс"
+    assert sc._pick_key("Windows", blob) == "windows"
+
+    drops = tmp_path / "Jarvis" / "chat-workspace" / ".jarvis" / "drops"
+    drops.mkdir(parents=True)
+    (drops / "a.pdf").write_bytes(b"x")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    assert sc._find_file(".jarvis/drops/a.pdf") == drops / "a.pdf"
