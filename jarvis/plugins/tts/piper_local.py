@@ -268,12 +268,21 @@ class PiperLocalTTS:
             return 0 if stopped.is_set() else 1
 
         nonlocal_rate = [sample_rate]
+        # Fork addition: a deeper (or higher) voice at the same pace. Piper speaks FASTER by the pitch factor and the
+        # samples are then announced at a proportionally LOWER rate: the player resamples, so the pitch drops and the
+        # duration is back to normal. Settings come from [tts.fx] pitch (semitones), see jarvis/audio/voice_fx.py.
+        from jarvis.audio import voice_fx  # noqa: PLC0415
+
+        fx_settings = voice_fx.current_settings()
+        pitch_factor = 2.0 ** (fx_settings.pitch / 12.0)
+        # Piper's length reacts to ``speed`` only about half as strongly as 1/speed (measured), hence the exponent.
+        speed_eff = max(0.5, min(2.0, self._speed / pitch_factor ** 1.8))
 
         def _generate() -> None:
             try:
                 try:
                     audio = engine.generate(
-                        spoken, 0, self._speed, callback=_callback
+                        spoken, 0, speed_eff, callback=_callback
                     )
                 except TypeError as exc:
                     # Older sherpa-onnx builds and lightweight test engines do
@@ -289,7 +298,7 @@ class PiperLocalTTS:
                         )
                     ):
                         raise
-                    audio = engine.generate(spoken, 0, self._speed)
+                    audio = engine.generate(spoken, 0, speed_eff)
                 if not sample_rate:
                     rate = int(getattr(audio, "sample_rate", 0) or 0)
                     if rate:
@@ -307,6 +316,9 @@ class PiperLocalTTS:
         worker = asyncio.create_task(asyncio.to_thread(_generate), name="piper-tts")
         self.last_voice = model_id
         self.last_voice_provider = self.name
+        # Fork addition: optional "assistant" colour ([tts.fx] in jarvis.toml), see jarvis/audio/voice_fx.py.
+        fx = voice_fx.VoiceFx(fx_settings) if fx_settings.active else None
+        last_rate = 0
         try:
             while True:
                 item = await asyncio.to_thread(chunks.get)
@@ -318,12 +330,24 @@ class PiperLocalTTS:
                 )
                 if rate <= 0:
                     raise RuntimeError("The local voice returned no sample rate.")
+                rate = max(8000, int(round(rate * pitch_factor)))  # announce the pitch-shifted rate
+                last_rate = rate
+                if fx is not None:
+                    try:
+                        item = fx.process(item, rate)
+                    except Exception:  # noqa: BLE001 - never lose the voice because of the colour
+                        log.warning("voice_fx failed; speaking dry", exc_info=True)
+                        fx = None
                 yield AudioChunk(
                     pcm=item,
                     sample_rate=rate,
                     timestamp_ns=0,
                     channels=1,
                 )
+            if fx is not None and last_rate:
+                tail = fx.flush()
+                if tail:
+                    yield AudioChunk(pcm=tail, sample_rate=last_rate, timestamp_ns=0, channels=1)
             await worker
             if failure:
                 raise failure[0]

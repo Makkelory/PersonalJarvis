@@ -18,6 +18,14 @@ from jarvis.plugins.tts import piper_local
 from jarvis.plugins.tts.piper_local import PiperLocalTTS
 
 
+@pytest.fixture(autouse=True)
+def _voice_fx_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The colour comes from the working folder's jarvis.toml: these tests judge the dry voice."""
+    from jarvis.audio import voice_fx
+
+    monkeypatch.setattr(voice_fx, "current_settings", lambda: voice_fx.FxSettings())
+
+
 class _FakeAudio:
     def __init__(self, seconds: float = 0.5, sample_rate: int = 22_050) -> None:
         self.samples = np.linspace(-0.5, 0.5, int(sample_rate * seconds), dtype=np.float32)
@@ -269,3 +277,30 @@ def test_module_exposes_the_expected_provider_surface() -> None:
     """Structural TTSProvider conformance — no inheritance, so assert it."""
     for attribute in ("synthesize", "list_voices", "name", "supports_streaming"):
         assert hasattr(piper_local.PiperLocalTTS, attribute)
+
+
+
+def test_a_lower_pitch_speaks_faster_and_announces_a_lower_sample_rate(all_voices_installed, monkeypatch) -> None:
+    """Fork addition: [tts.fx] pitch = -2 -> same pace, deeper voice (the player resamples)."""
+    from jarvis.audio import voice_fx
+    from jarvis.audio.voice_fx import FxSettings
+
+    seen: dict[str, float] = {}
+    rates: list[int] = []
+
+    class _Engine(_FakeEngine):
+        def generate(self, text, speaker_id, speed, **kw):
+            seen["speed"] = speed
+            return _FakeAudio()
+
+    monkeypatch.setattr(PiperLocalTTS, "_build_engine", lambda self, model_id: _Engine(model_id))
+    monkeypatch.setattr(voice_fx, "current_settings", lambda: FxSettings("off", 0.0, -2.0))
+
+    async def _run() -> None:
+        async for chunk in PiperLocalTTS().synthesize("Доброе утро", language_code="ru-RU"):
+            rates.append(chunk.sample_rate)
+
+    asyncio.run(_run())
+
+    assert seen["speed"] > 1.1  # faster generation ...
+    assert rates and all(r < 22_050 for r in rates) and abs(rates[0] - 22_050 * 2 ** (-2 / 12)) < 5  # ... lower rate
