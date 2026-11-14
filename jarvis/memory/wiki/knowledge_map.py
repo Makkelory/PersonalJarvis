@@ -27,7 +27,7 @@ _FOLDER = "jarvis-knowledge"
 _TOOL_PROGRAMS = {
     "spotify_control": ["Spotify"], "steam_control": ["Steam"], "happ_vpn": ["Happ"],
     "open_app": [], "close_app": [], "window_control": [], "app_catalog": [], "browser_control": [],
-    "memory_notes": [], "scenes": ["Spotify", "Steam"], "study_course": [], "skill_from_knowledge": [], "app_control": [], "study_app": [],
+    "memory_notes": [], "scenes": ["Spotify", "Steam"], "study_course": [], "skill_from_knowledge": [], "app_control": [], "study_app": [], "run_shell": ["Windows PowerShell", "Командная строка"],
 }
 _BAD = re.compile(r'[\\/:*?"<>|#^\[\]]')
 
@@ -57,11 +57,12 @@ def _tool_classes() -> dict[str, Any]:
     from jarvis.plugins.tool.skill_from_knowledge import SkillFromKnowledgeTool
     from jarvis.plugins.tool.app_control import AppControlTool
     from jarvis.plugins.tool.app_study import StudyAppTool
+    from jarvis.plugins.tool.run_shell import RunShellTool
 
     tools = [OpenAppTool, CloseAppTool, ListAppsTool, SetVolumeTool, SystemStatusTool, FileOpsTool, PcControlTool,
              NetworkStatusTool, SetTimerTool, GetWeatherTool, GetRatesTool, CalculateTool, SpotifyControlTool,
              SteamControlTool, HappVpnTool, WindowControlTool, AppCatalogTool, BrowserControlTool, MemoryNotesTool,
-             ScenesTool, StudyCourseTool, SkillFromKnowledgeTool, AppControlTool, StudyAppTool]
+             ScenesTool, StudyCourseTool, SkillFromKnowledgeTool, AppControlTool, StudyAppTool, RunShellTool]
     return {cls.name: cls for cls in tools}
 
 
@@ -83,7 +84,7 @@ def export(vault_root: Path | str = Path("wiki/obsidian-vault")) -> dict[str, in
     from jarvis.plugins.tool import app_catalog
 
     root = Path(vault_root) / _FOLDER
-    entries = [e for e in app_catalog._load() if e["kind"] in {"lnk", "uwp", "exe"}]  # noqa: SLF001
+    entries = [e for e in app_catalog._load() if e["kind"] in {"lnk", "uwp", "exe", "sys"}]  # noqa: SLF001
     aliases: dict[str, list[str]] = {}
     for spoken, canon in app_catalog.RU_ALIASES.items():
         aliases.setdefault(canon.lower(), []).append(spoken)
@@ -123,7 +124,14 @@ def export(vault_root: Path | str = Path("wiki/obsidian-vault")) -> dict[str, in
                  f"- Запуск: `{where}`"]
         if spoken:
             lines.append("- Называется голосом: " + ", ".join(spoken))
+        if e.get("desc"):
+            lines.append(f"- Что это: {e['desc']}")
+        if e.get("cmd"):
+            lines.append(f"- Из cmd: `{e['cmd']}`; из PowerShell: `Start-Process {e['cmd'].replace('start ', '')}`")
         lines.append("")
+        course_hub = Path(vault_root) / _FOLDER / "Знания" / "Курс Windows.md"
+        if e["kind"] == "sys" and course_hub.exists():
+            lines += [f"Курс по теме: [[{_FOLDER}/Знания/Курс Windows|Курс Windows]]", ""]
         manual = Path(vault_root) / _FOLDER / "Знания" / f"Как пользоваться {name}.md"
         if manual.exists():
             lines += [f"Как пользоваться: [[{_FOLDER}/Знания/Как пользоваться {name}|Как пользоваться {name}]]", ""]

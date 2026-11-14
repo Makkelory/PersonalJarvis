@@ -230,7 +230,7 @@ def resolve_app_launch_target(app_name: str) -> LaunchTarget:
             normalized_without_exe = normalized.removesuffix(".exe")
             if normalized_without_exe == "spotify":
                 return LaunchTarget("startfile", "spotify:")
-            if raw.startswith("ms-settings:"):
+            if raw.startswith("ms-settings:") or raw.lower().endswith((".msc", ".cpl")):
                 return LaunchTarget("startfile", raw)
         return _resolve_windows(normalized, normalized_without_exe, raw)
     if plat == "darwin":

@@ -69,9 +69,14 @@ def _report(run: _Run) -> str:
 
 def _announce(text: str) -> None:
     try:
+        from jarvis.core.events import AnnouncementRequested  # noqa: PLC0415
         from jarvis.plugins.tool import reminders  # noqa: PLC0415
 
-        reminders._announce(text)  # noqa: SLF001 - speaks through the normal TTS (and beeps)
+        bus = reminders._BUS  # noqa: SLF001 - the bus the timers speak through
+        if bus is None:
+            return
+        event = AnnouncementRequested(text=text, priority="interrupt", language="ru", kind="info")
+        asyncio.get_running_loop().create_task(bus.publish(event))  # we are inside the app's loop
     except Exception:  # noqa: BLE001 - the report is still stored
         logger.debug("study_runner: announcement failed", exc_info=True)
 

@@ -36,10 +36,155 @@ _INBOX = Path("data") / "courses_inbox"
 _TEXTS = Path("data") / "course_texts"
 _DOC_SUFFIXES = {".txt", ".md", ".markdown", ".rst", ".log", ".html", ".htm", ".pdf"}
 _DEFAULT = "computer-science"
-_TITLES = {"computer-science": "Computer Science"}
+_TITLES = {"computer-science": "Computer Science", "windows": "Windows"}
+#: Courses whose blocks are practical: commands are collected into a playbook and each finished module becomes a skill.
+PRACTICAL = {"windows"}
 
 #: Built-in syllabus: module -> blocks. Order is the study order.
 SYLLABI: dict[str, list[tuple[str, list[str]]]] = {
+    "windows": [
+        ("Основы Windows и оболочка", [
+            "Устройство Windows: ядро, оболочка, учётные записи, редакции",
+            "Проводник, Пуск, поиск и рабочие столы",
+            "Параметры, Панель управления и ms-settings",
+            "Горячие клавиши Windows",
+            "Буфер обмена, история буфера и вставка",
+            "Файлы, расширения, ярлыки и ассоциации",
+        ]),
+        ("Командная строка cmd", [
+            "Основы cmd: запуск, синтаксис, справка /?",
+            "Навигация и файлы: cd, dir, copy, move, del, ren, md, rd",
+            "Переменные среды: set, PATH, %VAR%",
+            "Перенаправление и конвейер: >, >>, |, &&, ||",
+            "Bat-файлы: if, for, goto, параметры",
+            "Утилиты: tasklist, taskkill, ipconfig, ping, where",
+            "Ассоциации и запуск: start, assoc, ftype",
+        ]),
+        ("PowerShell", [
+            "Основы PowerShell: командлеты Глагол-Существительное, Get-Help, Get-Command",
+            "Объекты и конвейер: Select-Object, Where-Object, Sort-Object, ForEach-Object",
+            "Вывод и экспорт: Format-Table, Export-Csv, ConvertTo-Json, Out-File",
+            "Переменные, массивы, хеш-таблицы и строки",
+            "Условия, циклы, функции и параметры",
+            "Скрипты и политика выполнения",
+            "Модули, PowerShell Gallery и Get-Module",
+            "Обработка ошибок: try/catch, ErrorAction",
+            "Удалённое управление: Invoke-Command, WinRM, PSSession",
+        ]),
+        ("Файловая система и диски", [
+            "NTFS: структура, потоки и атрибуты",
+            "Пути, символические ссылки, junction и hardlink",
+            "Диски и разделы: Get-Disk, diskpart, форматирование",
+            "Права доступа: ACL, icacls, Get-Acl, наследование",
+            "Шифрование: BitLocker и EFS",
+            "Поиск и копирование: Get-ChildItem -Recurse, robocopy, xcopy",
+            "Архивы и сжатие: Compress-Archive, tar, 7-Zip",
+            "Теневые копии, история файлов и корзина",
+        ]),
+        ("Процессы и службы", [
+            "Процессы: tasklist, Get-Process, Stop-Process",
+            "Диспетчер задач: приоритеты, привязка к ядрам, детали",
+            "Службы: sc, Get-Service, services.msc, типы запуска",
+            "Автозагрузка: реестр, папки, планировщик",
+            "Планировщик заданий: schtasks, Register-ScheduledTask",
+            "Фоновые задания: Start-Job, Start-Process",
+        ]),
+        ("Реестр Windows", [
+            "Структура реестра: ветви, разделы, параметры, типы",
+            "Работа с реестром: reg.exe, Get-ItemProperty, Set-ItemProperty",
+            "Резервные копии и импорт: reg export, reg import",
+            "Типичные настройки через реестр и их риски",
+        ]),
+        ("Сеть", [
+            "Настройка TCP/IP: ipconfig, Get-NetIPConfiguration, DHCP",
+            "DNS: nslookup, Resolve-DnsName, кэш и flushdns",
+            "Диагностика: ping, tracert, pathping, Test-NetConnection",
+            "Порты и соединения: netstat, Get-NetTCPConnection",
+            "Wi-Fi: netsh wlan, профили и пароли",
+            "Брандмауэр: netsh advfirewall, New-NetFirewallRule",
+            "Общие папки и SMB: net use, New-SmbShare",
+            "Удалённый рабочий стол RDP и mstsc",
+            "Прокси и VPN: netsh winhttp, Add-VpnConnection",
+        ]),
+        ("Пользователи и безопасность", [
+            "Локальные учётные записи и группы: net user, Get-LocalUser",
+            "UAC и запуск от имени администратора",
+            "Microsoft Defender: Get-MpComputerStatus, Start-MpScan",
+            "Локальная политика безопасности и групповые политики: gpedit, gpresult",
+            "Журнал безопасности и аудит",
+            "Диспетчер учётных данных и пароли",
+            "Практики безопасности Windows для администратора",
+        ]),
+        ("Обновления, драйверы и восстановление", [
+            "Windows Update: управление и диагностика",
+            "Драйверы: pnputil, Get-PnpDevice, откат",
+            "Проверка целостности: sfc /scannow и DISM",
+            "Точки восстановления и откат системы",
+        ]),
+        ("Установка и управление программами", [
+            "winget: поиск, установка, обновление, экспорт",
+            "Chocolatey и Scoop",
+            "Тихая установка MSI и EXE и ключи установщиков",
+            "Список и удаление программ: Get-Package, Get-AppxPackage",
+            "Переменная PATH и портативные программы",
+        ]),
+        ("Мониторинг и диагностика", [
+            "Журналы событий: eventvwr, Get-WinEvent, фильтры",
+            "Производительность: perfmon, Get-Counter, typeperf",
+            "Сведения о системе: systeminfo, Get-ComputerInfo, msinfo32",
+            "Диски и их состояние: Get-PhysicalDisk, SMART",
+            "Синие экраны и дампы памяти",
+            "Электропитание и батарея: powercfg, отчёт батареи",
+            "Монитор надёжности и диагностика зависаний",
+        ]),
+        ("Загрузка и питание", [
+            "Процесс загрузки: UEFI, BCD, bcdedit",
+            "Безопасный режим и среда восстановления WinRE",
+            "Схемы электропитания, гибернация, быстрый запуск",
+            "Мультизагрузка и диск восстановления",
+        ]),
+        ("Виртуализация и WSL", [
+            "WSL: установка, дистрибутивы, интеграция с Windows",
+            "Hyper-V: виртуальные машины и Get-VM",
+            "Windows Sandbox и контейнеры",
+            "Docker Desktop на Windows",
+        ]),
+        ("Автоматизация", [
+            "Когда cmd, PowerShell или Python",
+            "WMI и CIM: Get-CimInstance, запросы",
+            "Текст и регулярные выражения: Select-String, findstr, -match",
+            "Горячие клавиши и AutoHotkey",
+            "Управление окнами и UI Automation",
+            "Планировщик плюс скрипты: типовые сценарии администратора",
+        ]),
+        ("Встроенные программы Windows", [
+            "Проводник: возможности, поиск, быстрый доступ",
+            "Блокнот, Paint, Ножницы и калькулятор",
+            "Консоли mmc: управление компьютером, диски, устройства",
+            "Редактор реестра и редактор групповой политики",
+            "Магазин и приложения UWP",
+            "Диспетчер задач, монитор ресурсов и системный монитор",
+        ]),
+        ("Резервное копирование", [
+            "История файлов и резервные копии: wbadmin",
+            "Образ системы и восстановление",
+            "OneDrive и синхронизация папок",
+            "robocopy для зеркалирования и бэкапов",
+        ]),
+        ("Устройства и печать", [
+            "Принтеры и очередь печати: Get-Printer",
+            "USB и Bluetooth: Get-PnpDevice",
+            "Звук и аудиоустройства",
+        ]),
+        ("Типичные неполадки", [
+            "Windows медленно работает: диагностика по шагам",
+            "Нет интернета: диагностика сети по шагам",
+            "Программа зависла или не запускается",
+            "Диск заполнен: поиск больших файлов и очистка",
+            "Windows не загружается: восстановление",
+            "Ошибки обновлений и повреждение системных файлов",
+        ]),
+    ],
     "computer-science": [
         ("Основы вычислений", [
             "Что такое вычисление и информация: биты и байты",
@@ -192,7 +337,10 @@ def _flat(syllabus: list[tuple[str, list[str]]]) -> list[dict[str, Any]]:
 
 
 def _slug(name: str) -> str:
-    return " ".join((name or _DEFAULT).lower().replace("ё", "е").replace("компьютер саенс", "computer-science")
+    text = " ".join((name or _DEFAULT).lower().replace("ё", "е").split())
+    if re.search(r"windows|виндовс|винд\w*|powershell|пауэршелл\w*|павершелл\w*|\bcmd\b|командн\w+ строк\w+|терминал\w*", text):
+        return "windows"
+    return " ".join(text.replace("компьютер саенс", "computer-science")
                     .replace("computer science", "computer-science").replace("информатика", "computer-science").split())
 
 
@@ -249,7 +397,7 @@ def _status(course: dict[str, Any], key: str) -> str:
 # search -> read -> write -> record, so the tool does the whole block itself.
 # ---------------------------------------------------------------------------
 _UA = {"User-Agent": "Mozilla/5.0 (Jarvis study course)"}
-_PAGE_CHARS = 6000
+_PAGE_CHARS = 8000
 
 
 class _ParagraphText(HTMLParser):
@@ -257,23 +405,36 @@ class _ParagraphText(HTMLParser):
         super().__init__()
         self._skip = 0
         self._in_p = False
+        self._pre = 0
         self.parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: Any) -> None:  # noqa: ANN401
         if tag in {"script", "style", "nav", "footer", "header", "aside", "noscript"}:
             self._skip += 1
+        elif tag == "pre" and not self._skip:
+            self._in_p = True
+            self._pre += 1
+            self.parts.append("\n")
         elif tag in {"p", "li", "h2", "h3"} and not self._skip:
             self._in_p = True
 
     def handle_endtag(self, tag: str) -> None:
         if tag in {"script", "style", "nav", "footer", "header", "aside", "noscript"} and self._skip:
             self._skip -= 1
+        elif tag == "pre":
+            self._pre = max(0, self._pre - 1)
+            self._in_p = False
+            self.parts.append("\n")
         elif tag in {"p", "li", "h2", "h3"}:
             self._in_p = False
             self.parts.append("\n")
 
     def handle_data(self, data: str) -> None:
-        if self._in_p and not self._skip and data.strip():
+        if not self._in_p or self._skip:
+            return
+        if self._pre:
+            self.parts.append(data)  # code keeps its line breaks
+        elif data.strip():
             self.parts.append(data.strip() + " ")
 
 
@@ -319,6 +480,23 @@ def _wiki_results(query: str) -> list[dict[str, str]]:
     return out
 
 
+def _learn_results(query: str) -> list[dict[str, str]]:
+    """Microsoft Learn hits (ru, then en): the authoritative source for Windows, PowerShell and cmd."""
+    import httpx  # noqa: PLC0415
+
+    out: list[dict[str, str]] = []
+    for locale in ("ru-ru", "en-us"):
+        try:
+            r = httpx.get("https://learn.microsoft.com/api/search", headers=_UA, timeout=10,
+                          params={"search": query, "locale": locale, "$top": 3})
+            for hit in r.json().get("results", []):
+                if hit.get("url"):
+                    out.append({"title": hit.get("title", ""), "snippet": hit.get("description", ""), "url": hit["url"]})
+        except Exception:  # noqa: BLE001
+            continue
+    return out
+
+
 def _queries(block: dict[str, Any]) -> list[str]:
     title = block["title"]
     parts = [p.strip() for p in re.split(r"[:,]", title) if len(p.strip()) > 3]
@@ -326,7 +504,7 @@ def _queries(block: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(variants))[:4]
 
 
-async def _gather(block: dict[str, Any], queries: list[str] | None = None) -> tuple[str, list[str]]:
+async def _gather(block: dict[str, Any], queries: list[str] | None = None, learn: bool = False) -> tuple[str, list[str]]:
     """Search the web for the block and read the best pages; returns (materials, source urls)."""
     from jarvis.plugins.tool.search_web import SearchWebTool  # noqa: PLC0415
 
@@ -342,17 +520,25 @@ async def _gather(block: dict[str, Any], queries: list[str] | None = None) -> tu
                 results.append(item)
 
     qs = queries or _queries(block)
-    for query in qs:
-        res = await tool.execute({"query": query}, None)
-        out = getattr(res, "output", None)
-        if isinstance(out, dict):
-            _add(list(out.get("results", [])))
+    if learn:  # documentation first: it is fast and has the exact commands
+        for query in qs[:3]:
+            _add(await asyncio.to_thread(_learn_results, query))
+        for query in sorted(qs, key=len)[:2]:
+            _add(await asyncio.to_thread(_wiki_results, query))
+    for query in ([] if len(results) >= 4 else qs):
+        for attempt in range(2 if not results else 1):  # the backend answers "empty" now and then: retry only while nothing is found
+            res = await tool.execute({"query": query}, None)
+            out = getattr(res, "output", None)
+            if isinstance(out, dict) and out.get("results"):
+                _add(list(out.get("results", [])))
+                break
+            await asyncio.sleep(1.0)
         if len(results) >= 6:
             break
         await asyncio.sleep(0.5)
-    for query in qs[:2]:
+    for query in sorted(qs, key=len)[:2]:
         _add(await asyncio.to_thread(_wiki_results, query))
-    results.sort(key=lambda r: 0 if "wikipedia.org" in r["url"] else 1)
+    results.sort(key=lambda r: 0 if "learn.microsoft.com" in r["url"] else 1 if "wikipedia.org" in r["url"] else 2)
     snippets = "\n".join(f"- {r.get('title', '')}: {r.get('snippet', '')}" for r in results[:10])
     pages: list[str] = []
     sources: list[str] = []
@@ -378,10 +564,27 @@ def _ollama_model() -> str:
         return "qwen3.5:9b"
 
 
-def _summarize(block: dict[str, Any], materials: str, previous: str | None) -> str:
+def _summarize(block: dict[str, Any], materials: str, previous: str | None, practical: bool = False,
+               course_title: str = "Computer Science") -> str:
     """The local model writes the lesson from the gathered text only (no cloud)."""
     import httpx  # noqa: PLC0415
 
+    if practical:
+        prompt = (
+            f"Тема урока: «{block['title']}» (модуль «{block['module']}», курс «{course_title}»).\n"
+            + (f"Предыдущий урок: «{previous}». Свяжи с ним одним предложением.\n" if previous else "")
+            + "Ниже материалы из интернета. Напиши по-русски практический конспект на 7-10 предложений: суть, как это "
+            "работает, один пример, типичная ошибка. Затем блок «Команды и приёмы:»: по строке на команду в виде "
+            "«PowerShell: команда — что делает» или «cmd: команда — что делает», с ТОЧНЫМИ командами из материалов "
+            "(если их нет, напиши «нет»). Затем строка «Опасно:» с командами или действиями, которые могут навредить "
+            "(или «нет»). В самом конце строка «Ключевые термины: » и 4-8 терминов. Опирайся только на материалы, "
+            "команды и ключи не выдумывай.\n\nМАТЕРИАЛЫ:\n" + materials[:9000]
+        )
+        body = {"model": _ollama_model(), "messages": [{"role": "user", "content": prompt}], "stream": False,
+                "think": False, "options": {"num_ctx": 12288, "temperature": 0.2}, "keep_alive": "30m"}
+        r = httpx.post("http://localhost:11434/api/chat", json=body, timeout=300)
+        r.raise_for_status()
+        return str(r.json().get("message", {}).get("content", "")).strip()
     prompt = (
         f"Тема урока: «{block['title']}» (модуль «{block['module']}», курс Computer Science).\n"
         + (f"Предыдущий урок: «{previous}». Свяжи новую тему с ним одним предложением.\n" if previous else "")
@@ -597,6 +800,42 @@ async def _study_file(tool: "StudyCourseTool", key: str, blob: dict[str, Any], c
             + await _skill_when_finished(tool, key, fresh))
 
 
+def _write_playbook(key: str, cur: dict[str, Any], practices: str) -> None:
+    """Append the exact commands of a block to the course playbook "Приёмы <курс>"."""
+    folder = Path("wiki/obsidian-vault") / "jarvis-knowledge" / "Знания"
+    folder.mkdir(parents=True, exist_ok=True)
+    playbook = folder / f"Приёмы {_course_title(key)}.md"
+    if not playbook.exists():
+        playbook.write_text(f"---\ntype: jarvis-playbook\ncourse: {_course_title(key)}\n---\n\n# Приёмы {_course_title(key)}\n\n"
+                            "Команды PowerShell и cmd из курса. Jarvis сверяется с ними перед работой.\n\n", encoding="utf-8")
+    link = f"[[jarvis-knowledge/Знания/{_note_name(cur)}|{cur['title']}]]"
+    with playbook.open("a", encoding="utf-8") as f:
+        f.write(f"## {cur['id']} {cur['title']} ({cur['module']})\n\n{practices}\n\nИз блока: {link}\n\n")
+
+
+async def _skill_when_module_done(tool: "StudyCourseTool", key: str, cur: dict[str, Any]) -> str:
+    """A finished module of a practical course becomes a draft skill (the owner activates it)."""
+    blob = _load()
+    course = blob.get(key) or {}
+    module = cur["module"]
+    if not course.get("practical") or module in (course.get("skills") or {}):
+        return ""
+    if not all(b["id"] in course["done"] for b in course["blocks"] if b["module"] == module):
+        return ""
+    try:
+        from jarvis.plugins.tool.skill_from_knowledge import make_skill  # noqa: PLC0415
+
+        ok, message, info = await make_skill(f"{_course_title(key)}: {module}", getattr(tool, "_ctx", None),
+                                             _course_title(key), module)
+    except Exception as exc:  # noqa: BLE001 - the lesson is recorded either way
+        logger.warning("module skill creation failed: %s", exc, exc_info=True)
+        return ""
+    blob = _load()
+    blob[key].setdefault("skills", {})[module] = info.get("skill_name", "") if ok else "failed"
+    _save(blob)
+    return f"\nМодуль «{module}» пройден: " + (message if ok else "навык создать не удалось")
+
+
 async def _study(tool: "StudyCourseTool", key: str, blob: dict[str, Any]) -> str:
     """Research, write, record one block; returns the report for the owner (deterministic)."""
     course = blob[key]
@@ -607,11 +846,16 @@ async def _study(tool: "StudyCourseTool", key: str, blob: dict[str, Any]) -> str
         return await _study_file(tool, key, blob, cur)
     idx = course["blocks"].index(cur)
     previous = course["blocks"][idx - 1]["title"] if idx > 0 else None
-    materials, sources = await _gather(cur)
+    practical = bool(course.get("practical"))
+    title = _course_title(key)
+    head = re.split(r"[:,]", cur["title"])[0].strip()
+    queries = list(dict.fromkeys(
+        [f"{head} Windows", f"{head} PowerShell команды", cur["title"], f"{head} cmd", head])) if practical else None
+    materials, sources = await _gather(cur, queries, learn=practical)
     if len(materials) < 300:
         return (f"ERROR: Не нашёл материалов по теме «{cur['title']}» (нет сети или поиск недоступен). "
                 "Блок не отмечен изученным.")
-    summary = await asyncio.to_thread(_summarize, cur, materials, previous)
+    summary = await asyncio.to_thread(_summarize, cur, materials, previous, practical, title)
     if len(summary) < 200:
         return "ERROR: Локальная модель не составила конспект. Блок не отмечен изученным."
     terms: list[str] = []
@@ -619,17 +863,26 @@ async def _study(tool: "StudyCourseTool", key: str, blob: dict[str, Any]) -> str
     if m:
         terms = [t.strip(" .") for t in m.group(1).split(",") if t.strip(" .")]
         summary = summary[: m.start()].strip()
+    practices = ""
+    if practical:
+        pm = re.search(r"Команды и приёмы:\s*(.*?)(?=\n\s*Опасно:|\Z)", summary, re.S)
+        if pm and pm.group(1).strip().lower().strip(" .") != "нет":
+            practices = pm.group(1).strip()
     done = tool._run({"action": "complete", "course": key, "block_id": cur["id"], "summary": summary,
                       "key_terms": terms, "source": ", ".join(sources[:2])})
     if done.startswith("ERROR:"):
         return done
     sentences = re.split(r"(?<=[.!?])\s+", summary)
     brief = " ".join(sentences[:3])
+    if practices:
+        await asyncio.to_thread(_write_playbook, key, cur, practices)
     fresh = _load()[key]
+    module_note = await _skill_when_module_done(tool, key, cur) if practical else ""
     return (f"Сэр, блок {cur['id']} «{cur['title']}» изучен. Кратко: {brief}\n"
             f"Ключевые понятия: {', '.join(terms[:6]) or '—'}. Источники: {', '.join(urllib.parse.urlparse(s).netloc for s in sources[:2])}. "
             f"Записано в Obsidian: «{_note_name(cur)}». Изучено {len(fresh['done'])} из {len(fresh['blocks'])}.\n"
-            + ("Продолжить, Сэр?" if len(fresh["done"]) < len(fresh["blocks"]) else "Курс завершён."))
+            + ("Команды записаны в справочник. " if practices else "")
+            + ("Продолжить, Сэр?" if len(fresh["done"]) < len(fresh["blocks"]) else "Курс завершён.") + module_note)
 
 
 def _course_runner(tool: "StudyCourseTool", key: str):
@@ -771,7 +1024,7 @@ class StudyCourseTool:
                 _save(blob)
                 return "Курс уже начат, продолжаем. " + _status(blob[key], key)
             blob[key] = {"state": "active", "started": datetime.now().strftime("%Y-%m-%d"),
-                         "blocks": _flat(SYLLABI[key]), "done": {}}
+                         "blocks": _flat(SYLLABI[key]), "done": {}, "practical": key in PRACTICAL}
             _save(blob)
             _write_hub(key, blob[key])
             first = self._run({"action": "next", "course": key})
