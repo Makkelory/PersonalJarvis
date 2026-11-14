@@ -614,6 +614,14 @@ local-realtime = "jarvis.plugins.realtime.openai_realtime:LocalRealtimeProvider"
 
 [project.entry-points."jarvis.tool"]
 open-app = "jarvis.plugins.tool.open_app:OpenAppTool"
+# Fork addition: real running/installed program listing and polite close.
+list-apps = "jarvis.plugins.tool.system_apps:ListAppsTool"
+close-app = "jarvis.plugins.tool.system_apps:CloseAppTool"
+set-volume = "jarvis.plugins.tool.system_control:SetVolumeTool"
+system-status = "jarvis.plugins.tool.system_control:SystemStatusTool"
+file-ops = "jarvis.plugins.tool.file_ops:FileOpsTool"
+pc-control = "jarvis.plugins.tool.pc_control:PcControlTool"
+network-status = "jarvis.plugins.tool.pc_control:NetworkStatusTool"
 type-text = "jarvis.plugins.tool.type_text:TypeTextTool"
 hotkey = "jarvis.plugins.tool.hotkey:HotkeyTool"
 click = "jarvis.plugins.tool.click:ClickTool"

@@ -308,6 +308,10 @@ class OpenAppTool:
         # normal launch (never blocks). is_app_running is best-effort and never
         # raises, so this can only help, never break, the launch path.
         reuse_existing = bool(args.get("reuse_existing", True))
+        logger.info(
+            "[OPEN_APP] target=%r reuse_existing=%s trace=%s",
+            app_name, reuse_existing, ctx.trace_id,
+        )
         low = app_name.lower().removesuffix(".exe")
         is_url = app_name.startswith(("http://", "https://", "file://"))
         is_path = (
@@ -422,6 +426,10 @@ class OpenAppTool:
             # succeeded, so a raise miss never flips the result, it only softens
             # the readback. Skipped for URLs/paths (the OS opener reuses an
             # existing browser window; the app-name match would not apply).
+            logger.info(
+                "[OPEN_APP] process launched kind=%s value=%s trace=%s",
+                kind, value, ctx.trace_id,
+            )
             raised = False
             if not is_url and not is_path:
                 # Also MAXIMIZE the freshly launched window so it fills its
@@ -449,6 +457,9 @@ class OpenAppTool:
                     )
                 except Exception:  # noqa: BLE001 — never fail a successful launch
                     raised = False
+            logger.info(
+                "[OPEN_APP] window raised=%s trace=%s", raised, ctx.trace_id,
+            )
             from jarvis.voice.action_phrases import action_phrase  # noqa: PLC0415
 
             lang = _output_language(ctx)

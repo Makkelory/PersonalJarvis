@@ -2760,7 +2760,7 @@ class LocalActionConfig(BaseModel):
     """Low-latency local action fast path settings."""
 
     enabled: bool = True
-    direct_timeout_s: float = Field(default=3.0, gt=0.0, le=30.0)
+    direct_timeout_s: float = Field(default=15.0, gt=0.0, le=30.0)
     harness_timeout_s: float = Field(default=30.0, gt=0.0, le=300.0)
 
 
