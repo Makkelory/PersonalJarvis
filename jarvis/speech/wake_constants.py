@@ -149,6 +149,56 @@ _NORMALISE_RE = re.compile(r"[^0-9a-zäöüß]+")  # i18n-allow
 _MATCH_NORMALISE_RE = re.compile(r"[^0-9a-z]+")
 
 
+# ---------------------------------------------------------------------------
+# Cyrillic wake words (fork addition 2026-11-14)
+# ---------------------------------------------------------------------------
+# The matcher below only ever saw ``[0-9a-z]``: every Cyrillic letter was
+# stripped, so "Hey Джарвис" collapsed to the single token "hey" (any "hey"
+# woke the assistant) and a bare "Джарвис" collapsed to nothing. Cyrillic text
+# is therefore transliterated into a *phonetic* Latin form before tokenising,
+# for the configured phrase AND for whatever the recogniser wrote. Sound-alike
+# spellings land on the same letters: "джарвис" and "жарвис" are both "jarvis",
+# "хей" / "эй" become the known prefix "hey", Latin "Jarvis" stays "jarvis".
+_CYR_RE = re.compile(r"[а-яё]")
+_CYR_PREFIXES = {
+    "хей": "hey", "хэй": "hey", "эй": "hey", "окей": "okay", "окэй": "okay", "ок": "ok", "привет": "hi",
+}
+_CYR_PREFIX_RE = re.compile(r"(?<![а-яa-z])(" + "|".join(sorted(_CYR_PREFIXES, key=len, reverse=True)) + r")(?![а-яa-z])")
+_CYR_MAP = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e", "ж": "j", "з": "s", "и": "i",
+    "й": "i", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t",
+    "у": "u", "ф": "f", "х": "h", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sh", "ъ": "", "ы": "i", "ь": "",
+    "э": "e", "ю": "yu", "я": "ya",
+}
+
+
+def _translit_cyrillic(text: str) -> str:
+    """Cyrillic -> phonetic Latin; text without Cyrillic is returned unchanged."""
+    lowered = (text or "").lower()
+    if not _CYR_RE.search(lowered):
+        return lowered
+    lowered = _CYR_PREFIX_RE.sub(lambda m: _CYR_PREFIXES[m.group(1)], lowered)
+    return _CYR_WORD_RE.sub(lambda m: _translit_word(m.group(0)), lowered)
+
+
+_CYR_WORD_RE = re.compile(r"[а-яё]+")
+# A word's first sound is the one people mangle most ("Джарвис" -> "жарвис",
+# "чарвис", "шарвис", "гарвис", "ярвис"): all of these onsets are folded onto one
+# consonant so they compare equal to the configured wake word, while the rest of
+# the word still has to match for real.
+_CYR_ONSET = {"г": "j", "ж": "j", "ч": "j", "ш": "j", "щ": "j", "я": "ja"}
+
+
+def _translit_word(word: str) -> str:
+    if word.startswith(("дж", "дз")):
+        head, rest = "j", word[2:]
+    elif word[0] in _CYR_ONSET:
+        head, rest = _CYR_ONSET[word[0]], word[1:]
+    else:
+        head, rest = "", word
+    return head + "".join(_CYR_MAP.get(ch, ch) for ch in rest.replace("дж", "j"))
+
+
 def _strip_diacritics(text: str) -> str:
     """Return an ASCII-ish form for STT matching, not display."""
     decomposed = unicodedata.normalize("NFKD", text or "")
@@ -161,13 +211,13 @@ def normalize_phrase(phrase: str) -> list[str]:
 
     Keeps German umlauts/ß. Empty/whitespace input returns ``[]``.  # i18n-allow
     """
-    cleaned = _NORMALISE_RE.sub(" ", (phrase or "").lower()).strip()
+    cleaned = _NORMALISE_RE.sub(" ", _translit_cyrillic(phrase or "")).strip()
     return cleaned.split() if cleaned else []
 
 
 def normalize_phrase_for_match(phrase: str) -> list[str]:
     """Tokenise for fuzzy wake matching with accents folded away."""
-    folded = _strip_diacritics(phrase).lower()
+    folded = _strip_diacritics(_translit_cyrillic(phrase or "")).lower()
     cleaned = _MATCH_NORMALISE_RE.sub(" ", folded).strip()
     return cleaned.split() if cleaned else []
 

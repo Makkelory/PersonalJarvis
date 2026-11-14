@@ -98,3 +98,33 @@ def test_steam_selected_row_is_recognised_by_its_blue_background() -> None:
 
     assert _row_selected(blue, 100, 50) is True
     assert _row_selected(grey, 100, 50) is False
+
+
+@pytest.mark.parametrize(
+    ("text", "state"),
+    [
+        ("Статус друзей в стиме в сети", "в сети"),
+        ("Статус стим В сети", "в сети"),
+        ("Статус друзей в стиме Нет на месте", "нет на месте"),
+        ("Поставь в стиме невидимка", "невидимка"),
+        ("Статус друзей в стиме неведимка", "невидимка"),
+        ("Статус в стиме не в сети", "не в сети"),
+        ("Смени статус стим на не беспокоить", "не беспокоить"),
+    ],
+)
+def test_free_word_steam_status(text: str, state: str) -> None:
+    plan = match_local_action(text, live_tool_names=_LIVE)
+
+    assert plan is not None
+    assert plan.tool_calls[0].name == "steam_control"
+    assert dict(plan.tool_calls[0].args) == {"action": "friend_status", "state": state}
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["почему в стиме не в сети мои друзья", "как поставить статус в стиме?", "в стиме новая игра в сети"],
+)
+def test_free_word_steam_status_ignores_questions_and_other_talk(text: str) -> None:
+    plan = match_local_action(text, live_tool_names=_LIVE)
+
+    assert plan is None or plan.tool_calls[0].name != "steam_control"

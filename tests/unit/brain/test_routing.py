@@ -2002,6 +2002,24 @@ def test_router_tools_is_pure_dispatcher_set() -> None:
             "delegate-to-agent",
             "society-status",
             "message-agent",
+            # Fork additions (2026-11-14): deterministic everyday-PC tools, each a
+            # direct local action (no spawn, never in a worker set). They also run
+            # through the local-action fast path; being router tools lets the model
+            # call them when a phrase misses the gate.
+            "list-apps",
+            "close-app",
+            "set-volume",
+            "system-status",
+            "file-ops",
+            "pc-control",
+            "network-status",
+            "set-timer",
+            "get-weather",
+            "get-rates",
+            "calculate",
+            "spotify-control",
+            "steam-control",
+            "happ-vpn",
         }
     )
     assert ROUTER_TOOLS == expected, (
