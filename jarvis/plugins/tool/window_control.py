@@ -15,6 +15,7 @@ import logging
 import os
 import re
 from ctypes import wintypes
+from pathlib import Path
 from typing import Any
 
 from jarvis.core.protocols import ExecutionContext, ToolResult
@@ -25,7 +26,8 @@ logger = logging.getLogger(__name__)
 SW_RESTORE, SW_MAXIMIZE, SW_MINIMIZE = 9, 3, 6
 SWP_NOZORDER, SWP_NOACTIVATE = 0x0004, 0x0010
 _OWN_PROCESSES = {"personaljarvis", "pythonw", "python", "jarvis"}
-_ACTIONS = ["list_monitors", "list_windows", "move_to_monitor", "snap", "maximize", "minimize", "restore", "center"]
+_ACTIONS = ["list_monitors", "list_windows", "move_to_monitor", "snap", "maximize", "minimize", "restore", "center",
+            "focus", "tile", "save_layout", "load_layout"]
 _SNAPS = {"left": (0.0, 0.0, 0.5, 1.0), "right": (0.5, 0.0, 0.5, 1.0), "top": (0.0, 0.0, 1.0, 0.5),
           "bottom": (0.0, 0.5, 1.0, 0.5), "full": (0.0, 0.0, 1.0, 1.0)}
 
@@ -164,6 +166,74 @@ def _resolve_monitor(spec: Any, current: _Monitor, monitors: list[_Monitor]) -> 
     return next((m for m in monitors if m.number == number), None)
 
 
+_LAYOUTS = Path("data") / "window_layouts.json"
+
+
+def _tile(monitors: list[_Monitor], count: int) -> str:
+    """Arrange the top ``count`` windows on the active window's monitor (2 = halves, 3-4 = grid)."""
+    count = max(2, min(count, 4))
+    wins = [w for w in _windows() if w[2] not in _OWN_PROCESSES and not _user32().IsIconic(w[0])][:count]
+    if len(wins) < 2:
+        return "Для раскладки нужно хотя бы два открытых окна."
+    mon = _monitor_of(wins[0][0], monitors)
+    wx, wy, wr, wb = mon.work
+    ww, wh = wr - wx, wb - wy
+    if len(wins) == 2:
+        cells = [(0, 0, 0.5, 1), (0.5, 0, 0.5, 1)]
+    elif len(wins) == 3:
+        cells = [(0, 0, 0.5, 1), (0.5, 0, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5)]
+    else:
+        cells = [(0, 0, 0.5, 0.5), (0.5, 0, 0.5, 0.5), (0, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5)]
+    for (hwnd, _t, _p), (fx, fy, fw, fh) in zip(wins, cells, strict=False):
+        _user32().ShowWindow(hwnd, SW_RESTORE)
+        _place(hwnd, wx + int(ww * fx), wy + int(wh * fy), int(ww * fw), int(wh * fh))
+    return f"Расположил {len(wins)} окна на мониторе {mon.number}: " + ", ".join(p or t[:20] for _h, t, p in wins) + "."
+
+
+def _save_layout(name: str) -> str:
+    import json  # noqa: PLC0415
+
+    saved = []
+    for hwnd, title, proc in _windows():
+        if proc in _OWN_PROCESSES or _user32().IsIconic(hwnd):
+            continue
+        saved.append({"proc": proc, "title": title[:60], "rect": list(_rect(hwnd)), "max": bool(_user32().IsZoomed(hwnd))})
+    try:
+        blob = json.loads(_LAYOUTS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        blob = {}
+    blob[name.lower()] = saved
+    _LAYOUTS.parent.mkdir(parents=True, exist_ok=True)
+    _LAYOUTS.write_text(json.dumps(blob, ensure_ascii=False, indent=1), encoding="utf-8")
+    return f"Запомнил расположение «{name}»: {len(saved)} окон."
+
+
+def _load_layout(name: str, monitors: list[_Monitor]) -> str:  # noqa: ARG001
+    import json  # noqa: PLC0415
+
+    try:
+        saved = json.loads(_LAYOUTS.read_text(encoding="utf-8")).get(name.lower())
+    except (OSError, ValueError):
+        saved = None
+    if not saved:
+        return f"Расположения «{name}» нет."
+    live = [w for w in _windows() if w[2] not in _OWN_PROCESSES]
+    used: set[int] = set()
+    moved = 0
+    for item in saved:
+        match = next((w for w in live if w[2] == item["proc"] and w[0] not in used), None)
+        if match is None:
+            continue
+        used.add(match[0])
+        l, t, r, b = item["rect"]
+        _user32().ShowWindow(match[0], SW_RESTORE)
+        _place(match[0], l, t, r - l, b - t)
+        if item.get("max"):
+            _user32().ShowWindow(match[0], SW_MAXIMIZE)
+        moved += 1
+    return f"Вернул расположение «{name}»: {moved} из {len(saved)} окон."
+
+
 def _do(action: str, args: dict[str, Any]) -> str:  # noqa: C901 - flat dispatch
     user32 = _user32()
     try:
@@ -176,12 +246,25 @@ def _do(action: str, args: dict[str, Any]) -> str:  # noqa: C901 - flat dispatch
     if action == "list_windows":
         wins = [w for w in _windows() if w[2] not in _OWN_PROCESSES][:25]
         return "\n".join(f"{p or '?'}: {t[:70]}" for _h, t, p in wins) or "Окон нет."
+    if action == "tile":
+        return _tile(monitors, int(args.get("count") or 2))
+    if action == "save_layout":
+        return _save_layout(str(args.get("name") or "основная"))
+    if action == "load_layout":
+        return _load_layout(str(args.get("name") or "основная"), monitors)
     query = str(args.get("window") or args.get("app") or "")
     picked = _pick_window(query)
     if picked is None:
         return f"Не нашёл окно «{query}»." if query else "Нет подходящего активного окна."
     hwnd, title, proc = picked
     name = f"«{title[:50]}» ({proc})"
+    if action == "focus":
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, SW_RESTORE)
+        user32.keybd_event(0x12, 0, 0, 0)  # a tap of Alt lets SetForegroundWindow through
+        user32.keybd_event(0x12, 0, 2, 0)
+        user32.SetForegroundWindow(hwnd)
+        return f"Переключился на окно {name}."
     if action == "minimize":
         user32.ShowWindow(hwnd, SW_MINIMIZE)
         return f"Свернул окно {name}."
@@ -244,7 +327,8 @@ class WindowControlTool:
     description: str = (
         "Moves and arranges windows. action: move_to_monitor (window=program/title fragment or empty for the "
         "active window, monitor=1|2|3|next), snap (side=left|right|top|bottom|full), center, maximize, minimize, "
-        "restore, list_monitors, list_windows. Monitors are numbered as in Windows Settings."
+        "restore, focus (switch to a program), tile (count windows side by side), save_layout/load_layout (name), "
+        "list_monitors, list_windows. Monitors are numbered as in Windows Settings."
     )
     schema: dict[str, Any] = {
         "type": "object",
@@ -253,6 +337,8 @@ class WindowControlTool:
             "window": {"type": "string", "description": "Program or title fragment; empty = active window."},
             "monitor": {"type": "string", "description": "Target monitor number (1, 2, ...) or 'next'."},
             "side": {"type": "string", "enum": list(_SNAPS)},
+            "count": {"type": "integer", "minimum": 2, "maximum": 4, "description": "tile: how many windows."},
+            "name": {"type": "string", "description": "save_layout / load_layout: layout name."},
         },
         "required": ["action"],
     }

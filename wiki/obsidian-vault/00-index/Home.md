@@ -30,3 +30,8 @@ jump between pages by name with **Ctrl+P**. Every `[[link]]` is clickable.
 This is a normal Obsidian vault: you can add, edit, and link your own notes
 freely. The maintenance rules Jarvis follows when it writes are documented
 in [[schema]] at the vault root.
+
+## Что умеет Jarvis
+
+- [[jarvis-knowledge/Умения|Умения]] и [[jarvis-knowledge/Программы|Программы]] (создаются автоматически при запуске)
+- [[memory]] и [[entities/user|Пользователь]]

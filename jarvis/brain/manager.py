@@ -9046,6 +9046,12 @@ class BrainManager:
             override is not None,
             tid,
         )
+        try:  # fork: journal of voice/chat commands ("что я просил вчера")
+            from jarvis.memory import command_history  # noqa: PLC0415
+
+            command_history.record(user_text, [c.name for c in plan.tool_calls])
+        except Exception:  # noqa: BLE001
+            pass
         if override is not None and plan.mode != LocalActionMode.DIRECT:
             return None
         if plan.mode == LocalActionMode.UNSUPPORTED:
@@ -13773,6 +13779,8 @@ _LOCAL_TOOL_TIMEOUTS_S: dict[str, float] = {
     "spotify_control": 45.0,
     "app_catalog": 90.0,
     "window_control": 20.0,
+    "browser_control": 20.0,
+    "scenes": 150.0,
     "list_apps": 60.0,
     "file_ops": 45.0,
     "get_weather": 25.0,
@@ -13793,6 +13801,7 @@ _PINNED_TOOL_NAMES = frozenset({
     "spotify_control", "steam_control", "happ_vpn",
     "spotify-control", "steam-control", "happ-vpn",
     "window_control", "app_catalog", "window-control", "app-catalog",
+    "browser_control", "memory_notes", "scenes", "browser-control", "memory-notes",
 })
 
 #: Chars per token for the size estimate. Deliberately low: tool schemas are

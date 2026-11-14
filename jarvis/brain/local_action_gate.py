@@ -1562,6 +1562,121 @@ def _match_window_control(original: str) -> LocalActionPlan | None:
     return None
 
 
+_PRE = r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис|jarvis)?[\s,]*(?:пожалуйста\s+)?"
+_BR_SEARCH_RE = re.compile(
+    _PRE + r"(?:(?:найди|поищи|ищи|покажи)\s+(?:в\s+|на\s+)(?P<e>яндексе|гугле|google|ютубе|ютюбе|youtube)\s+(?P<q>.+?)"
+    r"|(?:загугли|погугли|гугли)\s+(?P<q2>.+?)|(?:яндексни|найди\s+в\s+яндексе)\s+(?P<q3>.+?))[\s?.!]*$", re.I,
+)
+_BR_OPEN_SITE_RE = re.compile(
+    _PRE + r"(?:открой|открыть|зайди\s+на|перейди\s+на|запусти)\s+(?:сайт\s+)?(?P<s>[\w .\-]{2,40}?)[\s?.!]*$", re.I,
+)
+_BR_TAB_RE = tuple(
+    (re.compile(_PRE + body + r"[\s?.!]*$", re.I), action)
+    for body, action in (
+        (r"(?:открой|создай|новая|нужна)\s+(?:новую\s+)?вкладк\w*|новая\s+вкладка", "new_tab"),
+        (r"закрой\s+(?:эту\s+|текущую\s+)?вкладк\w*", "close_tab"),
+        (r"(?:верни|открой\s+снова|восстанови)\s+(?:закрытую\s+)?вкладк\w*", "reopen_tab"),
+        (r"(?:следующая|следующую|вперёд|вперед)\s+вкладк\w*|переключи\s+вкладк\w*|на\s+следующую\s+вкладку", "next_tab"),
+        (r"(?:предыдущая|предыдущую|прошлая|прошлую)\s+вкладк\w*|на\s+предыдущую\s+вкладку", "prev_tab"),
+        (r"обнови\s+(?:эту\s+)?страницу|перезагрузи\s+страницу|обнови\s+вкладку", "reload"),
+        (r"(?:вернись|назад)\s+(?:на\s+)?(?:предыдущую\s+)?страниц\w*|страница\s+назад", "back"),
+        (r"открой\s+(?:новое\s+)?окно\s+браузера|новое\s+окно\s+браузера", "new_window"),
+        (r"(?:открой\s+)?(?:режим\s+)?инкогнито|приватное\s+окно", "incognito"),
+        (r"(?:открой\s+)?историю\s+браузера", "history"),
+        (r"(?:открой\s+)?загрузки\s+браузера", "downloads"),
+    )
+)
+_WIN_NAMED_RE = re.compile(
+    _PRE + r"(?P<v>сверни|разверни|переключись\s+на|перейди\s+в|перейди\s+на|покажи\s+окно|вернись\s+в|вернись\s+на)\s+"
+    r"(?:окно\s+|программу\s+|приложение\s+)?(?P<w>[\w .\-]{2,40}?)[\s?.!]*$", re.I,
+)
+_WIN_NAMED_SKIP = re.compile(r"^(?:все|всё|это|этот|текущее|активное|окно|окна|экран|рабочий стол)(?:\s+окна)?$")
+_WIN_TILE_RE = re.compile(
+    _PRE + r"(?:расположи|размести|разложи|выстрой)\s+(?:все\s+)?окна\s*(?:рядом|плиткой|сеткой|друг\s+с\s+другом)?"
+    r"(?:\s+(?P<n>два|три|четыре|\d))?[\s?.!]*$|" + _PRE + r"окна\s+(?:рядом|плиткой|сеткой)[\s?.!]*$", re.I,
+)
+_WIN_LAYOUT_SAVE_RE = re.compile(
+    _PRE + r"запомни\s+(?:расположение|раскладку)\s+окон(?:\s+как)?\s*(?P<n>[\w .\-]{0,30}?)[\s?.!]*$", re.I,
+)
+_WIN_LAYOUT_LOAD_RE = re.compile(
+    _PRE + r"(?:верни|восстанови|включи)\s+(?:расположение|раскладку)\s+окон\s*(?P<n>[\w .\-]{0,30}?)[\s?.!]*$", re.I,
+)
+_MEM_REMEMBER_RE = re.compile(_PRE + r"(?:запомни|запиши\s+в\s+память|запомни\s+пожалуйста)(?:\s*,)?\s+(?:что\s+)?(?P<t>.{4,300}?)[\s?.!]*$", re.I)
+_MEM_RECALL_RE = re.compile(
+    _PRE + r"(?:что\s+ты\s+(?:помнишь|знаешь)\s+(?:про|о|об|обо)|вспомни(?:\s+(?:про|о|об))?|что\s+я\s+(?:тебе\s+)?(?:говорил|рассказывал)\s+(?:про|о|об))\s+"
+    r"(?P<q>.{2,100}?)[\s?.!]*$", re.I,
+)
+_MEM_HISTORY_RE = re.compile(
+    _PRE + r"что\s+(?:я\s+(?:тебя\s+)?(?:просил|делал|говорил|командовал)|мы\s+(?:делали|сделали)|ты\s+(?:сделал|делал))\s*"
+    r"(?P<d>сегодня|вчера|позавчера)?[\s?.!]*$", re.I,
+)
+_SCENE_RE = re.compile(
+    _PRE + r"(?:включи|запусти|активируй|давай|поставь|врубай)\s+(?:(?:режим|сценарий)\s+(?P<a>[\w\- ]{2,30}?)|(?P<b>[\w\-]{2,30}?)\s+(?:режим|сценарий))[\s?.!]*$", re.I,
+)
+_WORD_NUM = {"два": 2, "три": 3, "четыре": 4}
+
+
+def _match_new_skills(original: str) -> LocalActionPlan | None:
+    """Browser, named windows, layouts, memory and scenes (fork addition 2026-11-14)."""
+
+    def plan(tool: str, args: dict[str, object]) -> LocalActionPlan:
+        return LocalActionPlan(mode=LocalActionMode.DIRECT, tool_calls=(LocalToolCall(name=tool, args=args),))
+
+    m = _MEM_HISTORY_RE.match(original)
+    if m is not None:
+        back = {"вчера": 1, "позавчера": 2}.get((m.group("d") or "").lower(), 0)
+        return plan("memory_notes", {"action": "history", "days_back": back})
+    m = _MEM_RECALL_RE.match(original)
+    if m is not None:
+        return plan("memory_notes", {"action": "recall", "query": m.group("q")})
+    m = _WIN_LAYOUT_SAVE_RE.match(original)
+    if m is not None:
+        return plan("window_control", {"action": "save_layout", "name": (m.group("n") or "основная").strip() or "основная"})
+    m = _WIN_LAYOUT_LOAD_RE.match(original)
+    if m is not None:
+        return plan("window_control", {"action": "load_layout", "name": (m.group("n") or "основная").strip() or "основная"})
+    m = _MEM_REMEMBER_RE.match(original)
+    if m is not None:
+        return plan("memory_notes", {"action": "remember", "text": m.group("t").strip()})
+    m = _SCENE_RE.match(original)
+    if m is not None:
+        from jarvis.plugins.tool import scenes  # noqa: PLC0415
+
+        spoken = (m.group("a") or m.group("b") or "").strip()
+        if scenes.resolve(spoken) is not None:
+            return plan("scenes", {"action": "run", "name": spoken})
+    for pattern, action in _BR_TAB_RE:
+        if pattern.match(original):
+            return plan("browser_control", {"action": action})
+    m = _BR_SEARCH_RE.match(original)
+    if m is not None:
+        engine = (m.group("e") or "").lower()
+        engine = "youtube" if engine.startswith(("ютуб", "ютюб", "youtube")) else "google" if engine in {"гугле", "google"} else "yandex"
+        if m.group("q2"):
+            engine = "google"
+        query = (m.group("q") or m.group("q2") or m.group("q3") or "").strip()
+        return plan("browser_control", {"action": "search", "query": query, "engine": engine})
+    m = _WIN_TILE_RE.match(original)
+    if m is not None:
+        n = (m.groupdict().get("n") or "2").lower()
+        return plan("window_control", {"action": "tile", "count": _WORD_NUM.get(n, int(n) if n.isdigit() else 2)})
+    m = _WIN_NAMED_RE.match(original)
+    if m is not None:
+        name = _window_name(m.group("w"))
+        if name and not _WIN_NAMED_SKIP.match(name):
+            verb = m.group("v").lower()
+            action = "minimize" if verb == "сверни" else "maximize" if verb == "разверни" else "focus"
+            return plan("window_control", {"action": action, "window": name})
+    m = _BR_OPEN_SITE_RE.match(original)
+    if m is not None:
+        from jarvis.plugins.tool import browser_control  # noqa: PLC0415
+
+        site = m.group("s").strip()
+        if browser_control.site_url(site) is not None and "." in site or site.lower().replace("ё", "е") in browser_control.SITES:
+            return plan("browser_control", {"action": "open_url", "site": site})
+    return None
+
+
 _OPEN_ANY_RE = re.compile(
     r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис|jarvis)?[\s,]*(?:пожалуйста\s+)?(?:открой|открыть|запусти|запустить|стартани|включи|запускай|вруби)\s+"
     r"(?:мне\s+)?(?:программу\s+|приложение\s+|игру\s+)?(?P<app>[^,.!?]{2,40}?)(?:\s+пожалуйста)?[\s?.!]*$",
@@ -1717,6 +1832,9 @@ def match_local_action(
     window_plan = _match_window_control(original)
     if window_plan is not None:
         return window_plan
+    skills_plan = _match_new_skills(original)
+    if skills_plan is not None:
+        return skills_plan
     catalog_plan = _match_open_from_catalog(original)
     if catalog_plan is not None:
         return catalog_plan

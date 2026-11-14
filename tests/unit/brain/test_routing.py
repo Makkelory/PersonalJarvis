@@ -2022,6 +2022,9 @@ def test_router_tools_is_pure_dispatcher_set() -> None:
             "happ-vpn",
             "window-control",
             "app-catalog",
+            "browser-control",
+            "memory-notes",
+            "scenes",
         }
     )
     assert ROUTER_TOOLS == expected, (
