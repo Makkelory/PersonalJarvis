@@ -164,6 +164,77 @@ def _find_play_button(page) -> tuple[int, int] | None:
     return x0 + c * cell + 20, y0 + r * cell + 20
 
 
+# The player bar is a real UI Automation group; its buttons are named in the UI language of Spotify
+# ("Слушать" = play, "Пауза" = pause, "Далее" / "Назад"). Pressing them works even when the OS media key does not
+# reach Spotify (a cold app has no media session yet: the key then does nothing and no track starts).
+_BAR_PS = r"""
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+$AE = [System.Windows.Automation.AutomationElement]
+$pids = @(Get-Process -Name 'Spotify' -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+$nameProp = [System.Windows.Automation.AutomationElement]::NameProperty
+$c1 = New-Object System.Windows.Automation.PropertyCondition($nameProp, 'Элементы управления плеером')
+$c2 = New-Object System.Windows.Automation.PropertyCondition($nameProp, 'Player controls')
+$both = New-Object System.Windows.Automation.OrCondition($c1, $c2)
+$group = $null
+foreach ($w in $AE::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)) {
+    try {
+        if ($pids -contains $w.Current.ProcessId) {
+            $g = $w.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $both)
+            if ($g) { $group = $g; break }
+        }
+    } catch {}
+}
+if (-not $group) { Write-Output '{"found":false}'; exit 0 }
+$btnCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+function Names { @($group.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) | ForEach-Object { $_.Current.Name }) }
+$wanted = @(__WANTED__)
+$pressed = ''
+if ($wanted.Count -gt 0) {
+    foreach ($b in $group.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond)) {
+        if ($wanted -contains $b.Current.Name.ToLower()) {
+            try { $b.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke(); $pressed = $b.Current.Name } catch {}
+            break
+        }
+    }
+    Start-Sleep -Milliseconds 600
+}
+ConvertTo-Json -InputObject @{ found = $true; pressed = $pressed; names = @(Names) } -Compress
+"""
+_PLAY_NAMES = ("слушать", "воспроизвести", "воспроизведение", "играть", "play")
+_PAUSE_NAMES = ("пауза", "приостановить", "pause")
+_BAR_BUTTONS = {
+    "play_pause": _PLAY_NAMES + _PAUSE_NAMES,
+    "next": ("далее", "следующий", "следующий трек", "next"),
+    "previous": ("назад", "предыдущий", "предыдущий трек", "previous"),
+    "state": (),
+}
+
+
+def _bar(action: str) -> dict[str, Any] | None:
+    """Press a player-bar button (or just read the bar for ``state``); None when the bar is not reachable."""
+    import json  # noqa: PLC0415
+
+    wanted = ", ".join("'" + n.replace("'", "''") + "'" for n in _BAR_BUTTONS[action])
+    try:
+        text = ui.run_ps(_BAR_PS.replace("__WANTED__", wanted), timeout=40).strip()
+        data = json.loads(text or "{}")
+    except Exception:  # noqa: BLE001 - the media key is the fallback
+        logger.debug("spotify bar not reachable", exc_info=True)
+        return None
+    return data if data.get("found") else None
+
+
+def _bar_playing(names: list[str]) -> bool | None:
+    """True when the bar offers "pause" (so music plays), False when it offers "play", None when unknown."""
+    low = [n.lower() for n in names]
+    if any(n in _PAUSE_NAMES for n in low):
+        return True
+    if any(n in _PLAY_NAMES for n in low):
+        return False
+    return None
+
+
 def _play_or_pause(action: str, win: "ui.Win | None") -> str:
     """Make Spotify play / pause, reading its state first (the title shows the track while playing)."""
     if win is None:
@@ -205,6 +276,20 @@ def _do(action: str) -> str:  # noqa: C901 — flat dispatch
         return _play_or_pause(action, win)
     if action in _MEDIA:
         before = win.title if win else ""
+        bar = _bar(action) if win is not None else None
+        if bar is not None and bar.get("pressed"):
+            pressed = str(bar.get("pressed", "")).lower()
+            if action == "play_pause":
+                if pressed in _PLAY_NAMES:
+                    time.sleep(1.2)
+                    now = ui.find_window("Spotify")
+                    track = _track(now.title) if now else ""
+                    return f"Включил: {track}." if track else "Нажал Play: музыка запускается."
+                return "Поставил на паузу."
+            after = _wait_title_change(before)
+            if after == before:
+                return f"Нажал «{'Далее' if action == 'next' else 'Назад'}», но название не изменилось: {_track(after) or 'нет трека'}."
+            return f"Переключил. Теперь играет: {_track(after)}."
         ui.chord(_MEDIA[action])
         if win is None:
             return "Отправил медиаклавишу, но окна Spotify не вижу: проверить результат не могу."

@@ -312,3 +312,39 @@ def test_page_text_keeps_the_commands_in_code_blocks() -> None:
     text = "".join(parser.parts)
 
     assert "Get-Disk\nGet-Partition -DiskNumber 0" in text and "x()" not in text
+
+
+def _spotify_with(monkeypatch, bar, titles):
+    """Spotify tool with a fake player bar, window titles and a recorded media key."""
+    from types import SimpleNamespace
+
+    from jarvis.plugins.tool import spotify_control as sp
+
+    keys: list[int] = []
+    queue = list(titles)
+    monkeypatch.setattr(sp, "_bar", lambda action: bar)
+    monkeypatch.setattr(sp.ui, "find_window", lambda name, title_like="": SimpleNamespace(title=queue[0] if len(queue) == 1 else queue.pop(0)))
+    monkeypatch.setattr(sp.ui, "chord", lambda *vks: keys.extend(vks))
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+    return sp, keys
+
+
+def test_play_music_presses_the_players_own_play_button(monkeypatch) -> None:
+    sp, keys = _spotify_with(monkeypatch, {"found": True, "pressed": "Слушать", "names": ["Назад", "Пауза", "Далее"]},
+                             ["Spotify Premium", "Artist - Song"])
+
+    assert sp._do("play_pause") == "Включил: Artist - Song."
+    assert keys == []  # the button worked: no media key needed
+
+
+def test_a_press_on_the_pause_button_reports_a_pause(monkeypatch) -> None:
+    sp, keys = _spotify_with(monkeypatch, {"found": True, "pressed": "Пауза", "names": ["Слушать"]}, ["Artist - Song"])
+
+    assert sp._do("play_pause") == "Поставил на паузу." and keys == []
+
+
+def test_without_a_reachable_player_bar_the_media_key_is_the_fallback(monkeypatch) -> None:
+    sp, keys = _spotify_with(monkeypatch, None, ["Spotify Premium", "Spotify Premium"])
+    monkeypatch.setattr(sp, "_wait_title_change", lambda before, timeout=3.5: "Artist - Song")
+
+    assert sp._do("play_pause") == "Играет: Artist - Song." and keys == [0xB3]
