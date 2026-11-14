@@ -73,3 +73,41 @@ def test_a_promise_in_front_of_a_real_answer_keeps_the_answer() -> None:
     )
 
     assert result == "Погода в Мытищах плюс четыре, облачно."
+
+
+# --- fork addition: claims of studying / writing notes without any tool call (the psychology-course incident) ---
+_REAL_LIES = [
+    "Я создал новую заметку курса «Психология» в Obsidian. Готов продолжить изучение следующего раздела.",
+    "Сэр, я продолжаю автоматическое изучение курса по психологии в фоне. Материал разбирается блок за блоком без остановок.",
+    "Сэр, перехожу к изучению следующего раздела курса по психологии.",
+    "Сэр, я принял твою инструкцию. Теперь изучу курс по психологии полностью, записывая итоги каждого блока в Obsidian.",
+    "Текущий прогресс: уже изучен первый блок «Психология как наука».",
+]
+
+
+@pytest.mark.parametrize("lie", _REAL_LIES)
+def test_a_study_claim_without_a_tool_call_is_replaced_by_the_honest_answer(lie: str) -> None:
+    from jarvis.brain.action_honesty import has_false_study_claim, replace_unbacked_action_claim
+
+    assert has_false_study_claim(lie)
+    out = replace_unbacked_action_claim(lie, executed_tools=set(), language="ru")
+
+    assert out.startswith("Обучение не запущено") and "изучи этот курс" in out
+
+
+@pytest.mark.parametrize("lie", _REAL_LIES)
+def test_the_same_words_are_fine_when_a_tool_really_ran(lie: str) -> None:
+    from jarvis.brain.action_honesty import replace_unbacked_action_claim
+
+    assert replace_unbacked_action_claim(lie, executed_tools={"study_course"}, language="ru") == lie
+
+
+@pytest.mark.parametrize("fine", [
+    "Курс Windows содержит 18 модулей и 105 блоков.",
+    "Изучение это процесс усвоения знаний, которому помогает повторение.",
+    "Хорошо, Сэр. Скажите, какой файл изучить.",
+])
+def test_ordinary_talk_about_courses_is_left_alone(fine: str) -> None:
+    from jarvis.brain.action_honesty import has_false_study_claim
+
+    assert not has_false_study_claim(fine)

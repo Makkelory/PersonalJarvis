@@ -1694,6 +1694,9 @@ def _match_new_skills(original: str) -> LocalActionPlan | None:
         return plan("study_course", {"action": "study", "course": "windows"})
     if _COURSE_RUN_RE.match(original):
         return plan("study_course", {"action": "study"})
+    m = _NAMED_COURSE_RE.match(original)
+    if m is not None and not _NOT_A_COURSE_NAME.match(m.group("n").strip()):
+        return plan("study_course", {"action": "study", "course": m.group("n").strip()})
     if _INBOX_STUDY_RE.match(original):
         return plan("study_course", {"action": "ingest"})
     m = _SKILL_CREATE_RE.match(original)
@@ -1785,6 +1788,7 @@ _INBOX_STUDY_RE = re.compile(
     r"(?:(?:всё|все)\s+)?(?:(?:новые|мои|загруженные)\s+)?(?:(?:папку|файлы|курсы|материалы)(?:\s+(?:с\s+курсами|курсов|загрузок))?|что\s+я\s+(?:загрузил|положил))[\s!.?]*$",
     re.I,
 )
+_NOT_A_COURSE_NAME = re.compile(r"^(?:computer\s+science|компьютер\s+саенс|информатик\w*|windows|виндовс\w*)$", re.I)
 _WINDOWS_WORDS = (
     r"windows|виндовс\w*|винд\w+|powershell|пауэршелл\w*|павершелл\w*|cmd|командн\w+\s+строк\w+|командн\w+\s+строк\w+\s+и\s+powershell"
 )
@@ -1920,6 +1924,27 @@ def split_into_commands(text: str) -> list[str]:
     return expanded
 
 
+_ATTACH_MARK = "\n\nFiles the user attached to this message are below"
+_ATTACH_REF_RE = re.compile(r'reference=""?([^"\n]+?\.(?:pdf|txt|md|markdown|html?|rst))""?', re.I)
+_STUDY_ATTACHED_RE = re.compile(
+    r"(?<![\w])(?:изуч\w*|уч[иу]\w*|выуч\w*|освой\w*|освоить|прочита\w*|разбер\w*|проработ\w*|научись|научи\w*|"
+    r"пройди|пройти|обучись|обучай\w*|штудир\w*|конспектир\w*)(?![\w])",
+    re.I,
+)
+_NAMED_COURSE_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:пожалуйста\s+)?(?:начни|начинай|продолжи|продолжай|возобнови|давай|изучай|изучи)\s+"
+    r"курс\w*\s+(?:по\s+)?(?P<n>[\w\- ]{3,60}?)[\s!.?]*$", re.I,
+)
+
+
+def _split_attachments(text: str) -> tuple[str, list[str]]:
+    """(the owner's own words, the dropped files' references) of a chat message that carries attachments."""
+    if _ATTACH_MARK not in text:
+        return text, []
+    head, _, tail = text.partition(_ATTACH_MARK)
+    return head.strip(), [m.group(1).strip() for m in _ATTACH_REF_RE.finditer(tail)]
+
+
 def match_local_action(
     text: str,
     lang: Literal["de", "en"] = "de",
@@ -1928,6 +1953,14 @@ def match_local_action(
     live_tool_names: Sequence[str] = (),
 ) -> LocalActionPlan | None:
     """Plan for one command, or for a queue of commands spoken in one breath (see split_into_commands)."""
+    # A chat message may carry dropped files after the owner's own words: judge the words, and let a study
+    # request ("изучи этот курс") run the real study tool on the dropped file instead of the model's say-so.
+    text, attached = _split_attachments(text)
+    if attached and _STUDY_ATTACHED_RE.search(_drop_wake_tokens(text.strip()) or ""):
+        return LocalActionPlan(
+            mode=LocalActionMode.DIRECT,
+            tool_calls=(LocalToolCall(name="study_course", args={"action": "study", "path": attached[0]}),),
+        )
     cleaned = _drop_wake_tokens(text.strip())
     segments = split_into_commands(cleaned) if cleaned else []
     if 2 <= len(segments) <= _MAX_STEPS:

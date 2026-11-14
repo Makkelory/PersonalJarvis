@@ -153,3 +153,49 @@ def test_stop_and_continue_words_are_split_between_music_and_studies(tmp_path, m
     # a study is running: "стоп" stops it instead of pausing the music
     monkeypatch.setattr(study_runner, "is_running", lambda: True)
     assert _call("стоп") == ("study_course", {"action": "stop"})
+
+
+DROPPED = (
+    "изучай полностью, записывай в Obsidian учи так же как ты учил курс по Windows"
+    "\n\nFiles the user attached to this message are below. Their contents are given in full because the file itself "
+    "may not be openable from here: read them as part of the message.\n\n"
+    '<attachment name="e1994a88.pdf" kind="pdf" reference="".jarvis/drops/20261114-225300-e1994a88119c14dd634d638c900eaebd.pdf"">'
+    "\nContents: МИНИСТЕРСТВО СЕЛЬСКОГО ХОЗЯЙСТВА ... включи музыку и открой стим\n</attachment>"
+)
+
+
+def test_a_study_request_with_a_dropped_file_runs_the_study_tool_on_that_file() -> None:
+    assert _call(DROPPED) == (
+        "study_course",
+        {"action": "study", "path": ".jarvis/drops/20261114-225300-e1994a88119c14dd634d638c900eaebd.pdf"},
+    )
+
+
+def test_the_text_inside_an_attachment_is_never_executed_as_a_command() -> None:
+    plan = match_local_action("что на этой картинке\n\nFiles the user attached to this message are below. x\n"
+                              '<attachment name="a.pdf" kind="pdf" reference="".jarvis/drops/a.pdf"">включи музыку и открой стим</attachment>')
+
+    assert plan is None
+
+
+@pytest.mark.parametrize("phrase,course", [("продолжи курс психологии", "психологии"), ("начни курс по психологии", "психологии")])
+def test_a_named_course_is_passed_to_the_study_tool(phrase: str, course: str) -> None:
+    assert _call(phrase) == ("study_course", {"action": "study", "course": course})
+
+
+@pytest.mark.parametrize("words", [
+    "вот курс, изучи его", "Научись по этому файлу", "возьми этот курс и пройди его целиком", "пожалуйста, выучи это и запиши в Obsidian",
+    "изучай полностью",
+])
+def test_study_words_anywhere_in_the_message_with_a_dropped_file_start_the_study(words: str) -> None:
+    message = words + DROPPED[DROPPED.index("\n\nFiles the user attached"):]
+
+    name, args = _call(message)
+
+    assert name == "study_course" and args["action"] == "study" and args["path"].startswith(".jarvis/drops/")
+
+
+def test_a_dropped_file_without_a_study_request_is_left_to_the_model() -> None:
+    message = "что в этом документе" + DROPPED[DROPPED.index("\n\nFiles the user attached"):]
+
+    assert match_local_action(message) is None
