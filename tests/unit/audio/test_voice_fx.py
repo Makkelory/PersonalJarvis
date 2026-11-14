@@ -81,3 +81,41 @@ def test_pitch_is_read_clamped_and_works_without_the_preset(tmp_path, monkeypatc
     path.write_text("[tts.fx]\npitch = -40\n", encoding="utf-8")
     monkeypatch.setattr(voice_fx, "_cache", None)
     assert voice_fx.current_settings().pitch == -6.0
+
+
+def test_pace_is_read_and_clamped(tmp_path, monkeypatch) -> None:
+    import jarvis.core.config as cfg
+
+    path = tmp_path / "jarvis.toml"
+    monkeypatch.setattr(cfg, "resolve_config_path", lambda: path)
+    path.write_text("[tts.fx]\npace = 0.88\n", encoding="utf-8")
+    monkeypatch.setattr(voice_fx, "_cache", None)
+    assert voice_fx.current_settings().pace == pytest.approx(0.88)
+    path.write_text("[tts.fx]\npace = 0.1\n", encoding="utf-8")
+    monkeypatch.setattr(voice_fx, "_cache", None)
+    assert voice_fx.current_settings().pace == 0.6
+    path.write_text("[tts]\nprovider = 'x'\n", encoding="utf-8")
+    monkeypatch.setattr(voice_fx, "_cache", None)
+    assert voice_fx.current_settings().pace == 1.0  # untouched when not configured
+
+
+def test_stretch_slows_the_speech_but_keeps_the_pitch() -> None:
+    t = np.arange(RATE * 2) / RATE
+    x = (0.4 * np.sin(2 * np.pi * 200 * t)).astype(np.float32)
+
+    y = voice_fx.stretch(x, RATE, 1.25)
+
+    assert 1.2 < y.size / x.size < 1.3
+    peak = np.argmax(np.abs(np.fft.rfft(y[RATE // 2: RATE // 2 + RATE]))) * RATE / RATE  # Hz in a 1 s window
+    assert 195 <= peak <= 205
+    assert np.abs(y[:200]).max() > 0.2 and np.abs(y[-300:-100]).max() > 0.2  # edges keep their level
+
+
+def test_pace_alone_does_not_colour_the_voice() -> None:
+    pcm = _speechlike(1.0)
+    fx = VoiceFx(FxSettings("off", 0.0, 0.0, 0.8))
+
+    out = fx.process(pcm, RATE)
+
+    assert 1.15 < len(out) / len(pcm) < 1.35 and fx.flush() == b""
+    assert voice_fx.for_turn is not None

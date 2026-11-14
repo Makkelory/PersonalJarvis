@@ -1,4 +1,4 @@
-﻿"""BrainManager: Intent-Router + Smart-Fallback + Pipeline-Adapter.
+"""BrainManager: Intent-Router + Smart-Fallback + Pipeline-Adapter.
 
 Architecture:
 
@@ -9080,7 +9080,20 @@ class BrainManager:
             # so the spoken acknowledgement must be localized HERE — the
             # language pin/detection that governs LLM replies never reaches it.
             ack_lang = self._direct_ack_language(user_text)
-            for call in plan.tool_calls:
+            if plan.compound:
+                # Fork addition: a queue of tasks. Say at once that it is accepted, then run the steps in order.
+                log.info("[LOCAL_ACTION] queue of %d steps: %s (trace=%s)", len(plan.tool_calls), list(plan.steps), tid)
+                try:
+                    from jarvis.core.events import AnnouncementRequested  # noqa: PLC0415
+
+                    await self._bus.publish(AnnouncementRequested(
+                        text=f"Принял, Сэр. Шагов: {len(plan.tool_calls)}. Выполняю по порядку.",
+                        priority="normal", language="ru", kind="info"))
+                except Exception:  # noqa: BLE001 - the acknowledgement is a courtesy
+                    pass
+            for step_no, call in enumerate(plan.tool_calls, start=1):
+                if plan.compound and step_no > 1:
+                    await asyncio.sleep(0.5)  # let the previous program finish opening before the next step
                 tool = self._local_action_tools.get(call.name)
                 if tool is None:
                     log.warning(
@@ -9088,6 +9101,9 @@ class BrainManager:
                         "_local_action_tools=%s; falling back to the brain (trace=%s)",
                         call.name, sorted(self._local_action_tools), tid,
                     )
+                    if plan.compound:
+                        outputs.append(f"Шаг {step_no} пропущен: инструмента нет.")
+                        continue
                     return None
                 call_timeout_s = max(timeout_s, _LOCAL_TOOL_TIMEOUTS_S.get(call.name, 0.0))
                 try:
@@ -9121,7 +9137,7 @@ class BrainManager:
                     ))
                     # Never speak the internal tool name + machine "timeout after
                     # 3s" string; a plain, localized line via the composer instead.
-                    return await render_readback(
+                    timeout_text = await render_readback(
                         getattr(self, "_readback_composer", None),
                         instruction=(
                             "The action the user asked for took too long and was "
@@ -9130,12 +9146,16 @@ class BrainManager:
                         language=ack_lang,
                         canned=lambda: action_phrase("action_timeout", ack_lang),
                     )
+                    if plan.compound:
+                        outputs.append(f"Шаг {step_no}: {timeout_text}")
+                        continue
+                    return timeout_text
                 if not result.success:
                     # NEVER return ``result.error`` verbatim — it is routinely the
                     # opaque ``exit N`` token (live forensic 2026-06-28: a harness
                     # failure was spoken as the bare "exit 1"). Route through the
                     # honest, localized, composer-backed readback instead.
-                    return await self._honest_failure_readback(
+                    failure_text = await self._honest_failure_readback(
                         result,
                         user_text=user_text,
                         situation=(
@@ -9145,6 +9165,10 @@ class BrainManager:
                         reason_key="action_failed_reason",
                         lang=ack_lang,
                     )
+                    if plan.compound:
+                        outputs.append(f"Шаг {step_no}: {failure_text}")
+                        continue  # the queue goes on: one failing step must not drop the rest
+                    return failure_text
                 if result.output is not None:
                     outputs.append(
                         self._localize_direct_ack(call, str(result.output), ack_lang)
@@ -12954,6 +12978,17 @@ class BrainManager:
                     await task
                 except (asyncio.CancelledError, Exception):  # noqa: BLE001
                     pass
+                # Fork addition: the owner spoke over the answer (barge-in) and the consumer cancelled us before
+                # generate() could write the turn into the history. Keep what was said, so the next request is
+                # understood in context ("а что ты имел в виду?"), and say that it was cut short.
+                if use_history and accumulated.strip():
+                    self._history.append(BrainMessage(role="user", content=user_text))
+                    self._history.append(BrainMessage(
+                        role="assistant",
+                        content=accumulated.rstrip() + "\n[Сэр перебил этот ответ; конец он мог не услышать.]",
+                    ))
+                    if len(self._history) > 40:
+                        self._history = self._history[-40:]
 
     # ------------------------------------------------------------------
     # Summarize — for Jarvis-Agent-Announcements (Phase 5, Wave-4 rebrand)
