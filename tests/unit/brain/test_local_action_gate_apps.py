@@ -158,7 +158,7 @@ def test_a_named_steam_game_is_launched(phrase: str) -> None:
 
 @pytest.mark.parametrize("phrase,action", [
     ("включи музыку джарвис следующий трек", "next"), ("дальше", "next"), ("джарвис стоп", "pause"),
-    ("включи музыку", "play"), ("пауза", "pause"), ("назад", "previous"), ("джарес включи музыку", "play"),
+    ("включи музыку", "play_pause"), ("пауза", "pause"), ("назад", "previous"), ("джарес включи музыку", "play_pause"),
 ])
 def test_media_phrases_map_to_explicit_spotify_actions(phrase: str, action: str) -> None:
     plan = match_local_action(phrase)

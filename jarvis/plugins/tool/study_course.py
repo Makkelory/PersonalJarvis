@@ -32,6 +32,8 @@ from jarvis.core.protocols import ExecutionContext, ToolResult
 logger = logging.getLogger(__name__)
 
 _STORE = Path("data") / "courses.json"
+#: How long after "Продолжить, Сэр?" a bare "да" / "продолжай" still means the study (not music).
+_ASK_WINDOW_S = 20 * 60
 _INBOX = Path("data") / "courses_inbox"
 _TEXTS = Path("data") / "course_texts"
 _DOC_SUFFIXES = {".txt", ".md", ".markdown", ".rst", ".log", ".html", ".htm", ".pdf"}
@@ -281,21 +283,21 @@ def awaiting_target() -> tuple[str, dict[str, Any]] | None:
     best: tuple[float, str, dict[str, Any]] | None = None
     for course in _load().values():
         stamp = course.get("awaiting") if isinstance(course, dict) else None
-        if isinstance(stamp, (int, float)) and time.time() - stamp < 3 * 3600 and course.get("state") == "active":
+        if isinstance(stamp, (int, float)) and time.time() - stamp < _ASK_WINDOW_S and course.get("state") == "active":
             if best is None or stamp > best[0]:
                 best = (float(stamp), "study_course", {"action": "study"})
     try:
         from jarvis.plugins.tool import app_study  # noqa: PLC0415
 
         stamp = app_study._load().get("awaiting")  # noqa: SLF001
-        if isinstance(stamp, (int, float)) and time.time() - stamp < 3 * 3600 and (best is None or stamp > best[0]):
+        if isinstance(stamp, (int, float)) and time.time() - stamp < _ASK_WINDOW_S and (best is None or stamp > best[0]):
             best = (float(stamp), "study_app", {"action": "study_next"})
     except Exception:  # noqa: BLE001
         pass
     return (best[1], best[2]) if best else None
 
 
-def awaiting_continue(max_age_s: float = 3 * 3600) -> bool:
+def awaiting_continue(max_age_s: float = 20 * 60) -> bool:
     """True while a finished block waits for the owner's "continue?" answer.
 
     The deterministic command gate uses it so that a bare "дальше" / "продолжай" in that

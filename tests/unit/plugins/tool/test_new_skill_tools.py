@@ -111,10 +111,13 @@ def test_start_returns_the_first_block_and_complete_arms_the_continue_gate(tmp_p
     tool._run({"action": "complete", "block_id": "1.1", "summary": summary})
 
     assert sc.awaiting_continue()
-    for phrase in ("дальше", "продолжай", "Да"):
+    for phrase in ("продолжай", "Да", "погнали"):
         plan = match_local_action(phrase)
         assert plan is not None and plan.tool_calls[0].name == "study_course"
         assert plan.tool_calls[0].args == {"action": "study"}
+    # "дальше" always means the next track, even while a study waits for its answer
+    nxt = match_local_action("дальше")
+    assert nxt.tool_calls[0].name == "spotify_control" and nxt.tool_calls[0].args == {"action": "next"}
     assert match_local_action("следующий трек") is not None  # explicit music words still work
     tool._run({"action": "next"})
     assert not sc.awaiting_continue()

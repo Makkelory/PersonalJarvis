@@ -123,3 +123,33 @@ def test_files_and_courses_are_not_taken_for_programs() -> None:
 ])
 def test_windows_course_phrases(phrase: str) -> None:
     assert _call(phrase) == ("study_course", {"action": "study", "course": "windows"})
+
+
+@pytest.mark.parametrize("phrase", ["включи музыку", "Джарвис, включи музыку", "запусти музыку", "поставь музыку", "продолжи музыку"])
+def test_play_music_is_just_the_play_pause_key(phrase: str) -> None:
+    assert _call(phrase) == ("spotify_control", {"action": "play_pause"})
+
+
+def test_stop_and_continue_words_are_split_between_music_and_studies(tmp_path, monkeypatch) -> None:
+    import json
+    import time
+
+    from jarvis.plugins.tool import study_runner
+
+    (tmp_path / "data").mkdir()
+    # no study: stop pauses the music, "дальше" is the next track, a bare "продолжай" is not a music command
+    assert _call("стоп") == ("spotify_control", {"action": "pause"})
+    assert _call("дальше") == ("spotify_control", {"action": "next"})
+    assert match_local_action("продолжай") is None
+    # a study asked "Продолжить, Сэр?" a moment ago: "продолжай" continues it, "дальше" is still music
+    (tmp_path / "data" / "courses.json").write_text(json.dumps(
+        {"x": {"state": "active", "awaiting": time.time() - 60, "blocks": [], "done": {}}}), encoding="utf-8")
+    assert _call("продолжай") == ("study_course", {"action": "study"})
+    assert _call("дальше") == ("spotify_control", {"action": "next"})
+    # the question is old: bare "да" goes back to nobody
+    (tmp_path / "data" / "courses.json").write_text(json.dumps(
+        {"x": {"state": "active", "awaiting": time.time() - 3600, "blocks": [], "done": {}}}), encoding="utf-8")
+    assert match_local_action("да") is None
+    # a study is running: "стоп" stops it instead of pausing the music
+    monkeypatch.setattr(study_runner, "is_running", lambda: True)
+    assert _call("стоп") == ("study_course", {"action": "stop"})
