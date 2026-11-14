@@ -65,7 +65,7 @@ def _candidates() -> list[dict[str, Any]]:
     spoken = {v.lower() for v in app_catalog.RU_ALIASES.values()}
     out = []
     for e in app_catalog._load():  # noqa: SLF001
-        if e["kind"] not in {"lnk", "uwp"}:
+        if e["kind"] not in {"lnk", "uwp", "sys"}:
             continue
         where = f"{e.get('exe', '')} {e.get('target', '')}"
         if _JUNK.search(e["name"]) or _GAME_PATH.search(where) or _SYSTEM_PATH.search(where):

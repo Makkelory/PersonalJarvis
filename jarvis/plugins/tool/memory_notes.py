@@ -27,7 +27,7 @@ def _link_names(text: str) -> str:
     from jarvis.plugins.tool import app_catalog  # noqa: PLC0415
 
     try:
-        entries = [e for e in app_catalog._load() if e["kind"] in {"lnk", "uwp"}]  # noqa: SLF001
+        entries = [e for e in app_catalog._load() if e["kind"] in {"lnk", "uwp", "sys"}]  # noqa: SLF001
     except Exception:  # noqa: BLE001
         return text
     spoken = {s: c for s, c in app_catalog.RU_ALIASES.items()}

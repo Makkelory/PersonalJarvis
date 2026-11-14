@@ -76,3 +76,26 @@ def test_stop_word_only_means_stop_while_a_study_runs(tmp_path, monkeypatch) -> 
 
     monkeypatch.chdir(tmp_path)
     assert match_local_action("стоп").tool_calls[0].args == {"action": "pause"}  # Spotify, nothing is studied
+
+
+@pytest.mark.asyncio
+async def test_the_final_announcement_works_inside_the_running_loop(monkeypatch) -> None:
+    """Regression: the announcement used asyncio.run() inside the app loop and crashed the runner's last step."""
+    from jarvis.plugins.tool import reminders
+
+    sent: list[str] = []
+
+    class Bus:
+        async def publish(self, event) -> None:
+            sent.append(event.text)
+
+    monkeypatch.setattr(reminders, "_BUS", Bus())
+
+    async def step():
+        return True, "готово", True
+
+    await rn.start("тест", step, lambda reason: "")
+    await _wait_idle()
+    await asyncio.sleep(0.05)
+
+    assert sent and "изучение завершено" in sent[0]

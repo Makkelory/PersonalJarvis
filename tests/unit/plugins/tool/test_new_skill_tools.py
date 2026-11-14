@@ -245,3 +245,67 @@ def test_continue_goes_to_the_study_that_asked_last(tmp_path, monkeypatch) -> No
     assert sc.awaiting_target()[0] == "study_course"
     (tmp_path / "data" / "app_knowledge.json").write_text(json.dumps({"apps": {}, "awaiting": time.time()}), encoding="utf-8")
     assert sc.awaiting_target() == ("study_app", {"action": "study_next"})
+
+
+def test_windows_course_syllabus_and_names() -> None:
+    from jarvis.plugins.tool import study_course as sc
+
+    modules = sc.SYLLABI["windows"]
+    assert len(modules) >= 15 and sum(len(blocks) for _m, blocks in modules) >= 100
+    titles = [m for m, _b in modules]
+    assert "Командная строка cmd" in titles and "PowerShell" in titles and "Сеть" in titles
+    assert "windows" in sc.PRACTICAL
+    for spoken in ("Windows", "виндовс", "powershell", "командная строка", "cmd"):
+        assert sc._slug(spoken) == "windows"
+    assert sc._slug("Computer Science") == "computer-science"
+
+
+def test_system_tools_are_catalog_programs_with_launch_commands() -> None:
+    from jarvis.plugins.tool import windows_system as ws
+
+    names = {t[0] for t in ws.SYSTEM_TOOLS}
+    assert {"Командная строка", "Windows PowerShell", "Диспетчер задач", "Редактор реестра", "Службы"} <= names
+    aliases = ws.spoken_aliases()
+    assert aliases["павершелл"] == "windows powershell" and aliases["диспетчер задач"] == "диспетчер задач"
+    from jarvis.plugins.tool import app_catalog
+
+    assert app_catalog.RU_ALIASES["просмотр событий"] == "просмотр событий"
+    assert "powershell" not in {k for k in app_catalog.RU_ALIASES if k == "powershell"}  # English names are not remapped
+    assert all(t[4] for t in ws.SYSTEM_TOOLS)  # every tool documents how to start it from cmd
+
+
+def test_msc_and_cpl_targets_are_opened_by_the_shell(monkeypatch) -> None:
+    from jarvis.plugins.tool import app_catalog, app_resolver
+
+    monkeypatch.setattr(app_resolver, "detect_platform", lambda: "win32")
+
+    assert app_resolver.resolve_app_launch_target("службы") == app_resolver.LaunchTarget("startfile", "services.msc")
+    entry = {"name": "Службы", "key": "службы", "kind": "sys", "target": "C:/Windows/System32/services.msc", "exe": "C:/Windows/System32/services.msc"}
+    monkeypatch.setattr(app_catalog, "_entries", [entry])
+    assert app_catalog.launch_target_for("службы").kind == "startfile"
+
+
+def test_skill_collection_can_be_scoped_to_one_module(tmp_path, monkeypatch) -> None:
+    from jarvis.plugins.tool import skill_from_knowledge as sk
+
+    vault = tmp_path / "wiki" / "obsidian-vault"
+    folder = vault / "jarvis-knowledge" / "Знания"
+    folder.mkdir(parents=True)
+    monkeypatch.setattr(sk, "_VAULT", vault)
+    (folder / "2.1 Диски.md").write_text("---\ntype: jarvis-knowledge\ncourse: Windows\nmodule: Диски\n---\n\nDiskpart и Get-Disk про диски windows", encoding="utf-8")
+    (folder / "3.1 Сеть.md").write_text("---\ntype: jarvis-knowledge\ncourse: Windows\nmodule: Сеть\n---\n\nipconfig и ping про сеть windows", encoding="utf-8")
+    (folder / "Приёмы Windows.md").write_text("---\ntype: jarvis-playbook\ncourse: Windows\n---\n\nGet-Disk windows", encoding="utf-8")
+
+    notes = sk._collect("Windows: Диски", "Windows", "Диски")
+
+    assert [p.stem for p, _t in notes] == ["Приёмы Windows", "2.1 Диски"]
+
+
+def test_page_text_keeps_the_commands_in_code_blocks() -> None:
+    from jarvis.plugins.tool.study_course import _ParagraphText
+
+    parser = _ParagraphText()
+    parser.feed("<p>Список дисков:</p><pre><code>Get-Disk\nGet-Partition -DiskNumber 0</code></pre><script>x()</script>")
+    text = "".join(parser.parts)
+
+    assert "Get-Disk\nGet-Partition -DiskNumber 0" in text and "x()" not in text

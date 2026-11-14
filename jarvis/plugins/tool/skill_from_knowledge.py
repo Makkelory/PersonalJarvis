@@ -38,7 +38,7 @@ def _strip(text: str) -> str:
     return "\n".join(ln for ln in text.splitlines() if not ln.startswith(_SKIP_LINES)).strip()
 
 
-def _collect(topic: str, course_title: str = "") -> list[tuple[Path, str]]:
+def _collect(topic: str, course_title: str = "", module: str = "") -> list[tuple[Path, str]]:
     """Knowledge notes about ``topic`` (playbook first), as (path, cleaned text)."""
     folder = _VAULT / "jarvis-knowledge" / "Знания"
     if not folder.is_dir():
@@ -53,6 +53,9 @@ def _collect(topic: str, course_title: str = "") -> list[tuple[Path, str]]:
         except OSError:
             continue
         low = (path.stem + "\n" + raw).lower().replace("ё", "е")
+        head = raw.split("---")[1] if raw.startswith("---") and raw.count("---") >= 2 else ""
+        if module and not path.stem.startswith("Приёмы") and f"module: {module}".lower() not in head.lower():
+            continue
         score = 0
         if course_title and (course_title.lower() in path.stem.lower() or f"курс {course_title.lower()}" in low):
             score += 10
@@ -112,11 +115,11 @@ def _record(name: str, topic: str, notes: list[tuple[Path, str]], draft_path: st
         hub.write_text(text.rstrip() + "\n" + entry + "\n", encoding="utf-8")
 
 
-async def make_skill(topic: str, ctx: Any = None, course_title: str = "") -> tuple[bool, str, dict[str, Any]]:
+async def make_skill(topic: str, ctx: Any = None, course_title: str = "", module: str = "") -> tuple[bool, str, dict[str, Any]]:
     """Create a draft skill from the knowledge about ``topic``; returns (ok, message, info)."""
     from jarvis.plugins.tool.create_skill import CreateSkillTool  # noqa: PLC0415
 
-    notes = await asyncio.to_thread(_collect, topic, course_title)
+    notes = await asyncio.to_thread(_collect, topic, course_title, module)
     if not notes:
         return False, f"Знаний по теме «{topic}» в Obsidian не нашёл: сначала изучите материалы.", {}
     knowledge = _knowledge_text(notes)

@@ -115,3 +115,11 @@ def test_program_use_phrases(phrase: str, expected: tuple[str, dict]) -> None:
 def test_files_and_courses_are_not_taken_for_programs() -> None:
     assert _call("изучи файл терминал")[0] == "study_course"
     assert _call("изучи курс computer science")[0] == "study_course"
+
+
+@pytest.mark.parametrize("phrase", [
+    "начни курс windows", "изучи powershell", "научись работать в cmd", "изучи виндовс",
+    "начни курс по командной строке", "научись пользоваться powershell", "изучи powershell и cmd",
+])
+def test_windows_course_phrases(phrase: str) -> None:
+    assert _call(phrase) == ("study_course", {"action": "study", "course": "windows"})

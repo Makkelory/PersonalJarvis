@@ -109,6 +109,15 @@ RU_ALIASES: dict[str, str] = {
     "эмулятор": "bluestacks", "блюстакс": "bluestacks", "вмвар": "vmware", "виртуалбокс": "virtualbox",
 }
 
+try:  # the built-in Windows tools answer to their Russian names too
+    from jarvis.plugins.tool.windows_system import spoken_aliases as _sys_aliases
+
+    for _spoken, _canon in _sys_aliases().items():
+        if re.search("[а-яё]", _spoken):  # English names keep resolving through the executable resolver
+            RU_ALIASES.setdefault(_spoken, _canon)
+except Exception:  # noqa: BLE001 - the catalog works without the extras
+    pass
+
 _FILLER = re.compile(r"\b(?:пожалуйста|программу|программа|приложение|приложухи|игру|игра|клиент|exe|эксешник|файл)\b")
 
 
@@ -257,13 +266,19 @@ def scan() -> list[dict[str, Any]]:
         raw.extend(data if isinstance(data, list) else [data])
     except Exception:  # noqa: BLE001 - a partial catalog is still useful
         logger.warning("app_catalog: shortcut scan failed", exc_info=True)
+    try:
+        from jarvis.plugins.tool.windows_system import catalog_entries  # noqa: PLC0415
+
+        raw.extend(catalog_entries())
+    except Exception:  # noqa: BLE001
+        logger.warning("app_catalog: system tools not added", exc_info=True)
     for root in _exe_roots():
         try:
             raw.extend(_walk_exes(root))
         except OSError:
             continue
     best: dict[str, dict[str, Any]] = {}
-    rank = {"lnk": 0, "uwp": 1, "exe": 2, "scan": 3}
+    rank = {"lnk": 0, "uwp": 1, "sys": 1, "exe": 2, "scan": 3}
     for item in raw:
         name = str(item.get("n") or "").strip()
         path = str(item.get("p") or "").strip()
@@ -271,6 +286,9 @@ def scan() -> list[dict[str, Any]]:
             continue
         entry = {"name": name, "key": _key(name), "kind": item.get("k", "scan"), "target": path,
                  "exe": str(item.get("e") or "")}
+        if item.get("d"):
+            entry["desc"] = str(item["d"])
+            entry["cmd"] = str(item.get("c") or "")
         prev = best.get(entry["key"])
         if prev is None or rank.get(entry["kind"], 9) < rank.get(prev["kind"], 9):
             best[entry["key"]] = entry
@@ -378,6 +396,10 @@ def launch_target_for(spoken: str):  # -> LaunchTarget | None
     if entry is None:
         return None
     exe = entry.get("exe") or ""
+    if entry["kind"] == "sys":
+        if exe and os.path.isfile(exe) and not exe.lower().endswith((".msc", ".cpl")):
+            return LaunchTarget("executable", exe)
+        return LaunchTarget("startfile", entry["target"])
     if entry["kind"] in {"exe", "scan"} and exe and os.path.isfile(exe):
         return LaunchTarget("executable", exe)
     return LaunchTarget("startfile", entry["target"])

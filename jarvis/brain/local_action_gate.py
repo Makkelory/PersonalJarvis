@@ -1685,6 +1685,9 @@ def _match_new_skills(original: str) -> LocalActionPlan | None:
     def plan(tool: str, args: dict[str, object]) -> LocalActionPlan:
         return LocalActionPlan(mode=LocalActionMode.DIRECT, tool_calls=(LocalToolCall(name=tool, args=args),))
 
+    m = _WINDOWS_COURSE_RE.match(original)
+    if m is not None:
+        return plan("study_course", {"action": "study", "course": "windows"})
     if _COURSE_RUN_RE.match(original):
         return plan("study_course", {"action": "study"})
     if _INBOX_STUDY_RE.match(original):
@@ -1777,6 +1780,14 @@ _INBOX_STUDY_RE = re.compile(
     r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:пожалуйста\s+)?(?:изучи|изучай|загрузи|прочитай)\s+"
     r"(?:(?:всё|все)\s+)?(?:(?:новые|мои|загруженные)\s+)?(?:(?:папку|файлы|курсы|материалы)(?:\s+(?:с\s+курсами|курсов|загрузок))?|что\s+я\s+(?:загрузил|положил))[\s!.?]*$",
     re.I,
+)
+_WINDOWS_WORDS = (
+    r"windows|виндовс\w*|винд\w+|powershell|пауэршелл\w*|павершелл\w*|cmd|командн\w+\s+строк\w+|командн\w+\s+строк\w+\s+и\s+powershell"
+)
+_WINDOWS_COURSE_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:пожалуйста\s+)?(?:начни|начинай|запусти|продолжи|продолжай|возобнови|давай|изучи|изучай|освой|научись)\s+"
+    r"(?:(?:курс|обучение|учёбу|учебу)\s+(?:по\s+)?|пользоваться\s+|работать\s+(?:в|с|на)\s+|администрировать\s+)?"
+    r"(?:" + _WINDOWS_WORDS + r")(?:\s+и\s+(?:" + _WINDOWS_WORDS + r"))?[\s!.?]*$", re.I,
 )
 _COURSE_RUN_RE = re.compile(
     r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:пожалуйста\s+)?(?:начни|начинай|запусти|продолжи|продолжай|возобнови|давай|изучи|изучай)\s+"
