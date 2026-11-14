@@ -67,6 +67,13 @@ class _CapabilityRegistryLike(Protocol):
 
 
 _DIRECT_PATTERNS = (
+    # Russian application launch commands
+    re.compile(
+        r"^(?:эй\s+)?(?:джарвис[,\s]+)?"
+        r"(?:открой|открывай|запусти|запускай|включи)\s+"
+        r"(?P<app>.+?)\s*[?.!]*$",
+        re.I,
+    ),
     # ``(?:er)?oeffne(?:t|st|n)?`` covers öffne / öffnet / öffnest / öffnen and the
     # er-prefixed eröffne / eröffnet / … so "Eröffnet den Explorer" also takes the
     # clean DIRECT launch instead of the computer-use vision loop (live 2026-06-08).
@@ -373,7 +380,7 @@ def _looks_like_desktop_control(text: str) -> bool:
 # provider-test endpoint). openrouter/openai/openwakeword must never count
 # as "open".
 _OPEN_VERB_RE = re.compile(
-    r"\b(?:oeffn\w*|aufmach\w*|aufzumach\w*|start\w*|open(?:s|ed|ing)?|launch\w*)\b",
+    r"\b(?:открой|открывай|запусти|запускай|включи|oeffn\w*|aufmach\w*|aufzumach\w*|start\w*|open(?:s|ed|ing)?|launch\w*)\b",
     re.IGNORECASE,
 )
 # Separable verb "mach … auf" (particle trails the object): "mach mir Spotify auf".
@@ -608,6 +615,7 @@ _APP_ALIASES = {
     "microsoft edge": "msedge",
     "msedge": "msedge",
     "notepad": "notepad",
+    "блокнот": "notepad",
     "editor": "notepad",
     "texteditor": "notepad",
     "explorer": "explorer",
@@ -729,6 +737,287 @@ _ORB_RESET_PATTERNS = (
 
 def _matches_orb_reset(text: str) -> bool:
     return any(pattern.match(text) for pattern in _ORB_RESET_PATTERNS)
+
+
+# Fork addition (2026-11-14): read-only questions about running / installed
+# programs are answered by the ``list_apps`` tool with REAL data instead of the
+# model's imagination. Narrow, whole-phrase patterns only — ordinary
+# conversation must never be mistaken for a system query.
+_WAKE_PREFIX = r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис|jarvis)?[\s,]*"
+_LIST_RUNNING_RE = re.compile(
+    _WAKE_PREFIX
+    + r"(?:"
+    r"(?:какие|что\s+за)\s+(?:сейчас\s+)?(?:программы|приложения|процессы)\s+"
+    r"(?:сейчас\s+)?(?:запущены|открыты|работают|идут)"
+    r"|что\s+(?:сейчас\s+)?(?:запущено|открыто|работает)(?:\s+на\s+(?:компьютере|пк))?"
+    r"|(?:покажи|покажи\s+мне|выведи|перечисли|дай)\s+(?:мне\s+)?(?:все\s+)?"
+    r"(?:запущенные|открытые|работающие)\s+(?:программы|приложения|процессы)"
+    r"|(?:список|покажи\s+список)\s+(?:запущенных\s+(?:программ|приложений|процессов)|процессов)"
+    r"|what(?:'s|\s+is)\s+running|list\s+(?:running\s+)?(?:processes|programs|apps)"
+    r")[\s?.!]*$",
+    re.I,
+)
+_LIST_INSTALLED_RE = re.compile(
+    _WAKE_PREFIX
+    + r"(?:"
+    r"(?:какие|что\s+за)\s+(?:программы|приложения)\s+(?:у\s+меня\s+)?(?:установлены|есть)"
+    r"(?:\s+на\s+(?:компьютере|пк|дисках?))?"
+    r"|(?:покажи|выведи|перечисли)\s+(?:все\s+)?(?:установленные|имеющиеся)\s+(?:программы|приложения)"
+    r")[\s?.!]*$",
+    re.I,
+)
+_SCAN_DISKS_RE = re.compile(
+    _WAKE_PREFIX
+    + r"(?:просканируй|сканируй|проверь|обнови)\s+(?:мои\s+)?(?:диски|диск|компьютер|пк)"
+    r"(?:\s+на\s+(?:наличие\s+)?(?:приложений|программ))?[\s?.!]*$",
+    re.I,
+)
+_FIND_APP_RE = re.compile(
+    _WAKE_PREFIX
+    + r"(?:найди|поищи|есть\s+ли|проверь,?\s+есть\s+ли)\s+(?:у\s+меня\s+)?"
+    r"(?:приложение|программу|программа)\s+(?P<q>[\w\-. ]{2,40}?)"
+    r"(?:\s+на\s+(?:компьютере|пк|дисках?))?[\s?.!]*$",
+    re.I,
+)
+
+
+def _match_list_apps(text: str) -> LocalActionPlan | None:
+    """Deterministic plan for 'which programs run / are installed' questions."""
+    if _LIST_RUNNING_RE.match(text):
+        args: dict[str, object] = {"scope": "running", "brief": True}
+    elif _SCAN_DISKS_RE.match(text):
+        args = {"scope": "installed", "rescan": True, "brief": True}
+    elif _LIST_INSTALLED_RE.match(text):
+        args = {"scope": "installed", "brief": True}
+    else:
+        found = _FIND_APP_RE.match(text)
+        if found is None:
+            return None
+        args = {"scope": "installed", "query": found.group("q").strip()}
+    return LocalActionPlan(
+        mode=LocalActionMode.DIRECT,
+        tool_calls=(LocalToolCall(name="list_apps", args=args),),
+    )
+
+
+# Fork addition (2026-11-14): volume, computer status and closing a program, as
+# deterministic whole-phrase commands (voice and chat alike). Narrow on purpose.
+_NUM = r"(?P<n>\d{1,3})"
+_VOL_SET_RE = re.compile(
+    _WAKE_PREFIX
+    + r"(?:(?:поставь|установи|сделай|выставь)\s+)?(?:громкость|звук)\s+(?:на\s+)?"
+    + _NUM + r"\s*(?:процентов|процента|процент|%)?[\s?.!]*$",
+    re.I,
+)
+_VOL_UP_RE = re.compile(
+    _WAKE_PREFIX
+    + r"(?:(?:сделай\s+)?(?:по)?громче|прибавь\s+(?:звук|громкость)|увеличь\s+(?:звук|громкость)"
+    r"|добавь\s+(?:звук|громкость))[\s?.!]*$",
+    re.I,
+)
+_VOL_DOWN_RE = re.compile(
+    _WAKE_PREFIX
+    + r"(?:(?:сделай\s+)?(?:по)?тише|убавь\s+(?:звук|громкость)|уменьши\s+(?:звук|громкость))[\s?.!]*$",
+    re.I,
+)
+_VOL_MUTE_RE = re.compile(
+    _WAKE_PREFIX + r"(?:(?:выключи|отключи)\s+звук|без\s+звука|mute)[\s?.!]*$", re.I,
+)
+_VOL_UNMUTE_RE = re.compile(
+    _WAKE_PREFIX + r"(?:(?:включи|верни)\s+звук|unmute)[\s?.!]*$", re.I,
+)
+_VOL_GET_RE = re.compile(
+    _WAKE_PREFIX + r"(?:какая\s+(?:сейчас\s+)?громкость|(?:на\s+сколько|сколько)\s+(?:процентов\s+)?громкость)[\s?.!]*$",
+    re.I,
+)
+_STATUS_RE = re.compile(
+    _WAKE_PREFIX
+    + r"(?:"
+    r"(?:какое|покажи|дай)\s+(?:мне\s+)?(?:сейчас\s+)?(?:состояние|статус)\s+(?:компьютера|пк|системы)"
+    r"|(?:проверь|покажи)\s+(?:состояние\s+)?(?:компьютер|пк|систему)"
+    r"|как\s+(?:там\s+)?(?:мой\s+)?(?:компьютер|пк)(?:\s+себя\s+чувствует)?"
+    r"|(?:как|насколько)\s+(?:загружен|нагружен)\w*\s+(?:процессор|компьютер|пк|видеокарта|система)"
+    r"|сколько\s+(?:свободно\s+)?(?:памяти|места|оперативки)(?:\s+(?:на\s+(?:диске|дисках)|свободно))?"
+    r"|(?:какая\s+)?температура\s+видеокарты|статус\s+системы|system\s+status"
+    r")[\s?.!]*$",
+    re.I,
+)
+_CLOSE_APP_RE = re.compile(
+    _WAKE_PREFIX
+    + r"(?:закрой|закрыть|заверши|завершить)\s+(?:программу\s+|приложение\s+)?(?P<app>[\w\-. ]{2,40}?)[\s?.!]*$",
+    re.I,
+)
+
+
+# Spoken name -> process-name fragment for "close X" (close_app matches process
+# names and window titles; unknown names fall back to the open-app alias table).
+_CLOSE_ALIASES: dict[str, str] = {
+    "стим": "steam", "steam": "steam", "яндекс браузер": "browser",
+    "яндекс": "browser", "браузер": "browser", "хром": "chrome",
+    "гугл хром": "chrome", "телеграм": "telegram", "телеграмм": "telegram",
+    "телега": "telegram", "дискорд": "discord", "спотифай": "spotify",
+    "спотик": "spotify", "блокнот": "notepad", "диспетчер задач": "taskmgr",
+    "обс": "obs64", "калькулятор": "calculator",
+}
+
+
+# Fork addition (2026-11-14): everyday-user commands. Whole-phrase, narrow.
+_PC_SIMPLE: tuple[tuple[re.Pattern[str], str, dict[str, object]], ...] = tuple(
+    (re.compile(_WAKE_PREFIX + r"(?:" + body + r")[\s?.!]*$", re.I), tool, args)
+    for body, tool, args in (
+        (r"(?:сделай|сними|сделать)\s+(?:скриншот|снимок\s+экрана)|скриншот|скрин", "pc_control", {"action": "screenshot"}),
+        (r"(?:заблокируй|заблокировать)\s+(?:компьютер|пк|экран|систему)", "pc_control", {"action": "lock"}),
+        (r"(?:переведи|отправь)\s+(?:компьютер|пк)\s+(?:в\s+)?(?:спящий\s+режим|сон)|режим\s+сна|усыпи\s+(?:компьютер|пк)",
+         "pc_control", {"action": "sleep"}),
+        (r"(?:выключи|выруби)\s+(?:компьютер|пк)|заверши\s+работу(?:\s+компьютера)?", "pc_control", {"action": "shutdown"}),
+        (r"перезагрузи(?:\s+(?:компьютер|пк))?|перезагрузка(?:\s+компьютера)?", "pc_control", {"action": "restart"}),
+        (r"отмени\s+(?:выключение|перезагрузку|завершение\s+работы)", "pc_control", {"action": "shutdown_cancel"}),
+        (r"сверни\s+все(?:\s+окна)?|покажи\s+рабочий\s+стол", "pc_control", {"action": "show_desktop"}),
+        (r"сверни\s+(?:это\s+|текущее\s+|активное\s+)?окно", "pc_control", {"action": "minimize_window"}),
+        (r"разверни\s+(?:это\s+|текущее\s+|активное\s+)?окно(?:\s+на\s+весь\s+экран)?", "pc_control", {"action": "maximize_window"}),
+        (r"закрой\s+(?:это\s+|текущее\s+|активное\s+)окно|закрой\s+окно", "pc_control", {"action": "close_window"}),
+        (r"пауза|поставь\s+на\s+паузу|продолжи\s+(?:музыку|воспроизведение)|включи\s+паузу",
+         "pc_control", {"action": "play_pause"}),
+        (r"(?:включи|запусти|поставь)\s+(?:снова\s+|опять\s+)?музыку(?:\s+(?:в|на)\s+(?:спотифай|spotify))?"
+         r"|возобнови\s+(?:музыку|воспроизведение)|верни\s+музыку", "pc_control", {"action": "play_pause"}),
+        (r"следующ\w+\s+(?:трек|песн\w+|композици\w+)|переключи\s+(?:трек|песню)|включи\s+следующ\w+",
+         "pc_control", {"action": "next"}),
+        (r"предыдущ\w+\s+(?:трек|песн\w+|композици\w+)|включи\s+предыдущ\w+", "pc_control", {"action": "previous"}),
+        (r"который\s+час|сколько\s+(?:сейчас\s+)?времени|какое\s+сегодня\s+число|какая\s+сегодня\s+дата|какой\s+сегодня\s+день",
+         "pc_control", {"action": "time"}),
+        (r"что\s+(?:сейчас\s+)?в\s+буфере\s+обмена|покажи\s+буфер\s+обмена", "pc_control", {"action": "clipboard_get"}),
+        (r"(?:проверь|как)\s+(?:мой\s+)?(?:интернет|сеть|соединение)|есть\s+ли\s+интернет|работает\s+ли\s+интернет",
+         "network_status", {}),
+    )
+)
+_OPEN_FOLDER_RE = re.compile(
+    _WAKE_PREFIX
+    + r"открой\s+(?:папку\s+)?(?P<f>загрузки|документы|рабочий\s+стол|картинки|изображения|музыку|видео)[\s?.!]*$",
+    re.I,
+)
+_FIND_FILE_RE = re.compile(
+    _WAKE_PREFIX
+    + r"(?:найди|поищи)\s+(?:мне\s+)?(?:файл|папку|документ)\s+(?P<q>[\w\-. ]{2,40}?)"
+    r"(?:\s+на\s+(?:компьютере|пк|дисках?))?[\s?.!]*$",
+    re.I,
+)
+_SETTINGS_RE = re.compile(
+    _WAKE_PREFIX
+    + r"открой\s+настройки(?:\s+(?P<p>wi-?fi|вай-?фай|сети|интернета|bluetooth|блютуз|звука|экрана|обновлени\w+|питания|приложений|хранилища|конфиденциальности))?[\s?.!]*$",
+    re.I,
+)
+_SETTINGS_PAGES = {
+    "wifi": "wifi", "wi-fi": "wifi", "вайфай": "wifi", "вай-фай": "wifi", "сети": "network",
+    "интернета": "network", "bluetooth": "bluetooth", "блютуз": "bluetooth", "звука": "sound",
+    "экрана": "display", "питания": "power", "приложений": "apps", "хранилища": "storage",
+    "конфиденциальности": "privacy",
+}
+
+
+def _match_pc_actions(text: str) -> LocalActionPlan | None:
+    """Plans for everyday-PC phrases (windows, media, power, files, settings)."""
+
+    def plan(tool: str, args: dict[str, object]) -> LocalActionPlan:
+        return LocalActionPlan(
+            mode=LocalActionMode.DIRECT,
+            tool_calls=(LocalToolCall(name=tool, args=args),),
+        )
+
+    for pattern, tool, args in _PC_SIMPLE:
+        if pattern.match(text):
+            return plan(tool, dict(args))
+    folder = _OPEN_FOLDER_RE.match(text)
+    if folder is not None:
+        return plan("file_ops", {"action": "open", "path": re.sub(r"\s+", " ", folder.group("f"))})
+    found = _FIND_FILE_RE.match(text)
+    if found is not None:
+        return plan("file_ops", {"action": "find", "query": found.group("q").strip()})
+    settings = _SETTINGS_RE.match(text)
+    if settings is not None:
+        raw = (settings.group("p") or "").lower()
+        page = "update" if raw.startswith("обновлени") else _SETTINGS_PAGES.get(raw, "main")
+        return plan("pc_control", {"action": "open_settings", "page": page})
+    return None
+
+
+_RU_TENS = {
+    "ноль": 0, "десять": 10, "двадцать": 20, "тридцать": 30, "сорок": 40, "пятьдесят": 50,
+    "шестьдесят": 60, "семьдесят": 70, "восемьдесят": 80, "девяносто": 90, "сто": 100,
+    "максимум": 100, "полную": 100,
+}
+_VOL_WORDS_RE = re.compile(r"громкост|звук")
+_VOL_NUM_RE = re.compile(
+    r"(?:(?P<prep>на|до)\s+)?(?:(?P<d>\d{1,3})\s*(?:%|процент\w*)?|(?P<w>" + "|".join(_RU_TENS) + r")(?:\s+процент\w*)?)"
+)
+_VOL_REL_UP = ("увеличь", "прибавь", "добавь", "повысь", "подними")
+_VOL_REL_DOWN = ("уменьши", "убавь", "понизь", "снизь", "опусти")
+
+
+def _volume_flex(text: str) -> LocalActionPlan | None:
+    """Free-word volume commands with a number: 'уменьши громкость до 50%',
+    'громкость звука на пк установи 50%', 'увеличь громкость на 20'.
+
+    Short utterances only (<= 9 words) and never questions, so ordinary talk
+    about sound ("расскажи про звук 5.1") is left to the model."""
+    if not _VOL_WORDS_RE.search(text) or "?" in text or len(text.split()) > 9:
+        return None
+    if re.search(r"какая|сколько|почему|как\s+(?:работает|настро)", text):
+        return None
+    num = _VOL_NUM_RE.search(text)
+    if num is None:
+        return None
+    value = int(num.group("d")) if num.group("d") else _RU_TENS[num.group("w")]
+    if not 0 <= value <= 100:
+        return None
+    relative = num.group("prep") == "на" and any(v in text for v in _VOL_REL_UP + _VOL_REL_DOWN)
+    if relative:
+        action = "up" if any(v in text for v in _VOL_REL_UP) else "down"
+        args: dict[str, object] = {"action": action, "step": max(1, value)}
+    else:
+        args = {"action": "set", "level": value}
+    return LocalActionPlan(
+        mode=LocalActionMode.DIRECT,
+        tool_calls=(LocalToolCall(name="set_volume", args=args),),
+    )
+
+
+def _match_system_control(text: str) -> LocalActionPlan | None:
+    """Plans for volume / status / close-program phrases (see module note above)."""
+
+    def plan(tool: str, args: dict[str, object]) -> LocalActionPlan:
+        return LocalActionPlan(
+            mode=LocalActionMode.DIRECT,
+            tool_calls=(LocalToolCall(name=tool, args=args),),
+        )
+
+    flex = _volume_flex(text)
+    if flex is not None:
+        return flex
+    found = _VOL_SET_RE.match(text)
+    if found is not None:
+        level = int(found.group("n"))
+        if 0 <= level <= 100:
+            return plan("set_volume", {"action": "set", "level": level})
+        return None
+    if _VOL_UP_RE.match(text):
+        return plan("set_volume", {"action": "up"})
+    if _VOL_DOWN_RE.match(text):
+        return plan("set_volume", {"action": "down"})
+    if _VOL_MUTE_RE.match(text):
+        return plan("set_volume", {"action": "mute"})
+    if _VOL_UNMUTE_RE.match(text):
+        return plan("set_volume", {"action": "unmute"})
+    if _VOL_GET_RE.match(text):
+        return plan("set_volume", {"action": "get"})
+    if _STATUS_RE.match(text):
+        return plan("system_status", {})
+    closing = _CLOSE_APP_RE.match(text)
+    if closing is not None:
+        spoken = re.sub(r"\s+", " ", closing.group("app").strip().lower())
+        app = _CLOSE_ALIASES.get(spoken) or _canonical_app(closing.group("app"))
+        if app is not None:
+            return plan("close_app", {"name": app})
+    return None
 
 
 def _unsupported_response(text: str, lang: str) -> str:
@@ -973,6 +1262,15 @@ def match_local_action(
             mode=LocalActionMode.DIRECT,
             tool_calls=(LocalToolCall(name="reset_orb_position", args={}),),
         )
+    list_apps_plan = _match_list_apps(normalized)
+    if list_apps_plan is not None:
+        return list_apps_plan
+    system_plan = _match_system_control(normalized)
+    if system_plan is not None:
+        return system_plan
+    pc_plan = _match_pc_actions(normalized)
+    if pc_plan is not None:
+        return pc_plan
     scripted = _match_scripted_local_plan(normalized)
     if scripted is not None:
         return scripted

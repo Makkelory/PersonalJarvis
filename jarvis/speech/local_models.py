@@ -499,7 +499,7 @@ FASTER_WHISPER_PACKAGE = "faster-whisper>=1.0"
 #: (PR #3671, released 2026-06-15). An older wheel loads the same files and
 #: then transcribes every language as English — a silent wrong answer, which is
 #: worse than a refusal, so the version is pinned rather than hoped for.
-SHERPA_ONNX_PACKAGE = "sherpa-onnx>=1.13.3"
+SHERPA_ONNX_PACKAGE = "sherpa-onnx>=1.13.3,<2"
 
 #: The multilingual Nemotron 3.5 streaming bundle, int8-quantised at a 560 ms
 #: chunk. Choices worth stating: MULTILINGUAL (the ``-en-`` sibling would
@@ -587,6 +587,27 @@ SHERPA_BUNDLES: dict[str, SherpaBundle] = {
         language="es",
         gender="feminine",
     ),
+    # Russian (fork addition). Same sherpa-onnx release as the voices above, so
+    # the archive layout (voice .onnx + tokens.txt + espeak-ng-data) is identical
+    # and PiperLocalTTS picks it for any turn the resolver lands on "ru".
+    "vits-piper-ru_RU-denis-medium": _piper_bundle(
+        "vits-piper-ru_RU-denis-medium",
+        label="Denis (Russian)",
+        language="ru",
+        gender="masculine",
+    ),
+    "vits-piper-ru_RU-dmitri-medium": _piper_bundle(
+        "vits-piper-ru_RU-dmitri-medium",
+        label="Dmitri (Russian)",
+        language="ru",
+        gender="masculine",
+    ),
+    "vits-piper-ru_RU-irina-medium": _piper_bundle(
+        "vits-piper-ru_RU-irina-medium",
+        label="Irina (Russian)",
+        language="ru",
+        gender="feminine",
+    ),
 }
 
 #: The voices the local TTS install fetches — one per supported language, all
@@ -596,6 +617,7 @@ PIPER_DEFAULT_VOICES: tuple[str, ...] = (
     "vits-piper-de_DE-thorsten-medium",
     "vits-piper-en_US-ryan-medium",
     "vits-piper-es_ES-davefx-medium",
+    "vits-piper-ru_RU-denis-medium",
 )
 
 LOCAL_PROVIDERS: tuple[LocalProvider, ...] = (
@@ -624,7 +646,7 @@ LOCAL_PROVIDERS: tuple[LocalProvider, ...] = (
         runtime="sherpa-onnx",
         model_id=PIPER_DEFAULT_VOICES[0],
         model_label="Piper voices",
-        download_size="about 200 MB",
+        download_size="about 270 MB",
         pip_package=SHERPA_ONNX_PACKAGE,
         bundles=PIPER_DEFAULT_VOICES,
     ),

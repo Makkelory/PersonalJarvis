@@ -70,7 +70,22 @@ _FALSE_COMPLETION_RE = re.compile(
     r"(?:laufen|lauft|spielt|spielen)\b|"  # i18n-allow: DE output
     r"\b(?:is|are)\s+(?:playing|running)\s+(?:now|already)\b|"
     r"\b(?:now|already)\s+(?:playing|running)\b|"
-    r"\b(?:ya\s+)?(?:esta|estan)\s+sonando\b"  # i18n-allow: ES output
+    r"\b(?:ya\s+)?(?:esta|estan)\s+sonando\b|"  # i18n-allow: ES output
+    # Russian (fork addition). Matched on NORMALISED text, where "й" has
+    # become "и" and "ё" has become "е", so the stems below are written in that
+    # folded form. A first-person completion with no tool call is a false claim.
+    r"\bя\s+(?:уже\s+|только\s+что\s+|успешно\s+|для\s+вас\s+|для\s+тебя\s+)?"  # i18n-allow: RU
+    r"(?:открыл|запустил|вывел|включил|выключил|проверил|нашел|выполнил|"  # i18n-allow: RU
+    r"отправил|сохранил|установил|закрыл|сделал)[аи]?\b|"  # i18n-allow: RU
+    r"\b(?:проверил|нашел|открыл|запустил|выполнил)[аи]?\s+"  # i18n-allow: RU
+    r"(?:погоду|браузер|приложение|программу|страницу|сайт|"  # i18n-allow: RU
+    r"информацию|результаты|стим|steam)\b|"  # i18n-allow: RU
+    # World-state completions without an actor ("браузер открыт", "оно
+    # запустилось и готово"), the Russian twin of the German ones above.
+    r"\b(?:браузер|браузера|приложение|программа|окно|страница|сайт|steam|стим)\s+"  # i18n-allow: RU
+    r"(?:уже\s+)?(?:открыт|запущен|открыта|запущена|открыто|запущено)[аоы]?\b|"  # i18n-allow: RU
+    r"\b(?:оно|она|он)\s+(?:уже\s+)?(?:запустил|открыл)(?:ось|ся|ась)\b|"  # i18n-allow: RU
+    r"\b(?:поиск|онлаин-?поиск|интернет)\s+(?:показыва|показал|говор|сообща)\w*"  # i18n-allow: RU
     r")"
 )
 
@@ -92,7 +107,11 @@ _ACTION_COMMITMENT_RE = re.compile(
     r"(?:look|check|review|read|fetch|open|save|enter|start|research|inspect)|"
     r"\b(?:voy\s+a|dejame)\s+"
     r"(?:mirar|revisar|consultar|leer|buscar|abrir|"  # i18n-allow: Spanish output matcher
-    r"guardar|anotar|iniciar)"  # i18n-allow: Spanish output matcher
+    r"guardar|anotar|iniciar)|"  # i18n-allow: Spanish output matcher
+    # Russian (fork addition), normalised form (й→и, ё→е).
+    r"\b(?:я\s+)?(?:сейчас\s+)?(?:открою|запущу|проверю|посмотрю|поищу|найду|"  # i18n-allow: RU
+    r"выполню|включу|отправлю|сохраню)\b|"  # i18n-allow: RU
+    r"\b(?:давай|давайте)\s+(?:проверим|посмотрим|откроем|найдем|запустим)\b"  # i18n-allow: RU
     r")"
 )
 
@@ -106,7 +125,12 @@ _DEFER_MARKER_RE = re.compile(
     r"\b(?:un\s+momento|espera|enseguida|luego|"  # i18n-allow: Spanish output matcher
     r"despues)\b|"  # i18n-allow: Spanish output matcher
     r"\b(?:te\s+digo|te\s+cuento|"  # i18n-allow: Spanish output matcher
-    r"vuelvo\s+contigo)\b"  # i18n-allow: Spanish output matcher
+    r"vuelvo\s+contigo)\b|"  # i18n-allow: Spanish output matcher
+    # Russian (fork addition). "сейчас" is deliberately NOT a marker: it opens
+    # real answers too ("Сейчас в Мытищах +4").
+    r"\b(?:одну\s+секунду|секундочку|минутку|подождите|подожди|"  # i18n-allow: RU
+    r"чуть\s+позже|позже|сообщу|вернусь)\b|"  # i18n-allow: RU
+    r"\bскажу\s+(?:вам|тебе)\b"  # i18n-allow: RU
     r")"
 )
 
@@ -123,7 +147,9 @@ _CLAUSE_SPLIT_RE = re.compile(
     r"|\s+[—–]+\s+)"
 )
 
-_TOKEN_RE = re.compile(r"[0-9a-z]+")
+# ASCII plus Cyrillic: without the Cyrillic range every Russian word vanished
+# from the token count, so no Russian clause could ever count as substance.
+_TOKEN_RE = re.compile(r"[0-9a-zа-я]+")  # i18n-allow: Cyrillic range
 
 # Closed-class words plus the politeness and hedging filler that a promise
 # clause is built from. Everything outside this set counts as content, so
@@ -155,7 +181,13 @@ _FUNCTION_WORDS: frozenset[str] = frozenset(
         "solo tambien claro por favor gracias si no nada algo todo es "  # i18n-allow: matcher
         "son era eran ser estar estoy esta estan estaba fue fueron "  # i18n-allow: matcher
         "hay he ha hemos han de en a con para sobre desde hasta como "  # i18n-allow: matcher
-        "que aqui alli ahora luego"  # i18n-allow: matcher
+        "que aqui alli ahora luego "  # i18n-allow: matcher
+        # Russian (fork addition), folded form.
+        "я ты он она оно мы вы они мне тебе вам мой твой наш ваш и или но "  # i18n-allow: matcher
+        "да нет не ни ли же бы уже еще только также просто это то как "  # i18n-allow: matcher
+        "что в на с со к ко по из за от до для у о об при про бы был "  # i18n-allow: matcher
+        "была было были есть будет пожалуйста спасибо давай давайте "  # i18n-allow: matcher
+        "хорошо ладно ок ну вот тут там сейчас"  # i18n-allow: matcher
     ).split()
 )
 
@@ -171,7 +203,8 @@ _SUBORDINATE_OPENER_RE = re.compile(
     r"once|if|until|till|because|unless|whether|while|when|"
     r"as\s+soon\s+as|so\s+that|"
     r"cuando|apenas|porque|mientras|aunque|que|"  # i18n-allow: Spanish output matcher
-    r"en\s+cuanto|para\s+que"  # i18n-allow: Spanish output matcher
+    r"en\s+cuanto|para\s+que|"  # i18n-allow: Spanish output matcher
+    r"когда|как\s+только|если|пока|потому\s+что|чтобы|хотя"  # i18n-allow: RU matcher
     r")\b"
 )
 
@@ -195,7 +228,25 @@ _DEPENDENT_CONTINUATION_RE = re.compile(
     r"(?:which|where|whom)\b|"
     r"(?:so|that)\s+you\s+can\b|"
     r"(?:con|en|para|sobre)\s+(?:los|las|el|la)\s+que\b|"  # i18n-allow: ES
-    r"donde\b"  # i18n-allow: Spanish output matcher
+    r"donde\b|"  # i18n-allow: Spanish output matcher
+    r"(?:которои|которая|которое|которые|где)\b|"  # i18n-allow: RU matcher (й folded to и)
+    # "Теперь оно активно и готово к работе" elaborates a claimed launch.
+    r"(?:теперь\s+)?(?:оно|она|он|они)\s+(?:уже\s+)?"  # i18n-allow: RU matcher
+    r"(?:активн|готов|работа|запущен|открыт|доступн)\w*\b"  # i18n-allow: RU matcher
+    r")"
+)
+
+# Russian claims of having LOOKED something up. With no tool call behind them
+# the figures that follow ("Сейчас там +25") are invented, so, unlike the
+# generic completion claims, the trailing clauses are not treated as an
+# independent delivered answer. Callers only apply the guard when the turn
+# executed no tool at all. Normalised form (й→и, ё→е).
+_RU_LOOKUP_CLAIM_RE = re.compile(
+    r"(?:"
+    r"\bя\s+(?:уже\s+|только\s+что\s+)?(?:проверил|нашел)[аи]?\b|"  # i18n-allow: RU
+    r"\b(?:проверил|нашел)[аи]?\s+(?:погоду|информацию|результаты|"  # i18n-allow: RU
+    r"в\s+интернете)\b|"  # i18n-allow: RU
+    r"\b(?:поиск|онлаин-?поиск|интернет)\s+(?:показыва|показал|говор|сообща)\w*"  # i18n-allow: RU
     r")"
 )
 
@@ -211,7 +262,8 @@ _COURTESY_RE = re.compile(
     r"\b(?:enjoy|have\s+fun)\b|"
     r"\bi\s+hope\b|\bhope\s+you\b|"
     r"\b(?:que\s+lo\s+disfrutes|espero\s+que|"  # i18n-allow: Spanish output matcher
-    r"buena\s+escucha)\b"  # i18n-allow: Spanish output matcher
+    r"buena\s+escucha)\b|"  # i18n-allow: Spanish output matcher
+    r"\b(?:приятного\s+(?:просмотра|прослушивания|использования)|надеюсь)\b"  # i18n-allow: RU
     r")"
 )
 
@@ -243,6 +295,10 @@ _ACTION_NOT_STARTED_PHRASES: dict[str, str] = {
         "No inicié ninguna acción para eso, así que todavía no tengo un "
         "resultado. Pídemelo de nuevo."
     ),  # i18n-allow: Spanish runtime voice/chat output
+    "ru": (
+        "Я не запускал для этого никакого действия, поэтому результата пока нет. "  # i18n-allow: RU voice phrase
+        "Повторите, пожалуйста, просьбу."  # i18n-allow: RU voice phrase
+    ),  # i18n-allow: Russian runtime voice/chat output
 }
 
 
@@ -394,6 +450,12 @@ def has_false_completion_claim(text: str) -> bool:
     clauses = _split_clauses(text)
     if not any(_clause_is_false_completion(clause) for clause in clauses):
         return False
+    if any(
+        _RU_LOOKUP_CLAIM_RE.search(_normalize(clause.body)) is not None
+        for clause in clauses
+    ):
+        # A Russian "I checked / search shows" claim carries invented figures.
+        return True
     previous_was_claim = False
     for clause in clauses:
         if _clause_is_false_completion(clause):

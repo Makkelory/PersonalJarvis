@@ -48,7 +48,13 @@ _MIN_TOKEN_LEN = 3
 # title. Most friendly names ARE a substring of the title (chrome → "Google
 # Chrome", spotify → "Spotify Premium"), so this stays tiny on purpose.
 _TITLE_ALIASES: dict[str, tuple[str, ...]] = {
-    "calc": ("calculator",),
+    "calc": ("calculator", "калькулятор"),
+    # Russian-locale Windows titles the window "Без имени — Блокнот", which does
+    # not contain the English token "notepad": the raise poll then never found
+    # the window and always waited out its full budget (live 2026-11-14).
+    "notepad": ("блокнот",),
+    "explorer": ("проводник",),
+    "taskmgr": ("диспетчер задач",),
 }
 
 

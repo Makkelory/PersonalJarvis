@@ -64,8 +64,14 @@ class PiperLocalTTS:
         gender: str | None = None,
         num_threads: int = 2,
         speed: float = _DEFAULT_SPEED,
+        preferred_voices: tuple[str, ...] = (),
     ) -> None:
         self._preferred_voice = (voice or "").strip() or None
+        # Voices the user picked in settings. Honoured only INSIDE the turn's
+        # language (a Piper voice is monolingual), ahead of the gender profile.
+        self._preferred_voices = tuple(
+            v.strip() for v in preferred_voices if v and v.strip()
+        )
         # Voice PROFILE rather than a single voice id: the pipeline may switch
         # language between turns, and the replacement must be the same kind of
         # speaker. Without this a language switch also switches sex, which is
@@ -134,6 +140,10 @@ class PiperLocalTTS:
                 language or "unknown",
             )
             candidates = list(installed)
+        # A voice the user chose in settings wins within this turn's language.
+        for chosen in self._preferred_voices:
+            if chosen in candidates:
+                return chosen
         # Same speaker profile across languages where possible.
         preferred = [
             m for m in candidates if installed[m].gender == self._gender
@@ -247,12 +257,15 @@ class PiperLocalTTS:
             return False
 
         def _callback(samples: Any, _progress: float) -> int:
+            # sherpa-onnx contract: return 1 to KEEP generating, 0 to stop.
+            # (Verified on 1.13.4: returning 0 on the first chunk cuts a five
+            # second sentence down to ~0.6 s, so this must not be inverted.)
             data = _pcm(samples)
             if data:
                 emitted.set()
                 if not _put(data):
-                    return 1
-            return 1 if stopped.is_set() else 0
+                    return 0
+            return 0 if stopped.is_set() else 1
 
         nonlocal_rate = [sample_rate]
 

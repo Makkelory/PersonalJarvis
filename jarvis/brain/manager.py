@@ -6728,7 +6728,11 @@ class BrainManager:
             + _approx_history_tokens(history)
             + _CONTEXT_FIT_RESERVE_TOKENS
         )
-        keep: set[str] = set()
+        # Fork change (2026-11-14): the trimmer drops the LARGEST tools first, and
+        # on a local window that silently removed ``search_web`` (live 04:39:54:
+        # "tool 'search_web' not in the router tool set"). The everyday-PC tools
+        # are pinned so the 9B model always has its hands and its internet.
+        keep: set[str] = {n for n in tools if n in _PINNED_TOOL_NAMES}
         mandated = getattr(self, "_evidence_required_tool", None)
         if mandated:
             keep.add(str(mandated))
@@ -8995,21 +8999,46 @@ class BrainManager:
         The tools used here are intentionally hidden from ``self._tools`` so
         they never appear in the router LLM schema.
         """
-        if _TURN_OVERRIDE.get() is not None:
-            # Scoped chats must use their selected tools and approval context,
-            # not the voice shortcut's global desktop/browser tool set.
-            return None
+        override = _TURN_OVERRIDE.get()
+        exec_config: dict[str, Any] | None = None
+        if override is not None:
+            # Typed chat (fork change 2026-11-14): the deterministic DIRECT path
+            # now serves chat too, so "открой блокнот" behaves the same typed or
+            # spoken instead of relying on the model to call a tool. Safety is
+            # unchanged: the executor still receives the chat's tool_context
+            # (approval surface, ``chat_read_only`` plan mode) and applies its
+            # own risk-tier approval. Only DIRECT plans run here (see below);
+            # screen/Computer-Use plans stay with the chat's own tool set.
+            exec_config = dict(getattr(override, "tool_context", None) or {})
+            if exec_config.get("chat_read_only"):
+                log.info("[LOCAL_ACTION] skipped: plan mode (trace=%s)", trace_id)
+                return None
         local_cfg = getattr(self._config, "local_action", None)
         if local_cfg is not None and not getattr(local_cfg, "enabled", True):
+            log.info("[LOCAL_ACTION] skipped: local_action.enabled=false (trace=%s)", trace_id)
             return None
         if self._tool_executor is None:
+            log.warning("[LOCAL_ACTION] skipped: no tool executor wired (trace=%s)", trace_id)
             return None
 
         plan = match_local_action(user_text, live_tool_names=self._live_tool_names())
         if plan is None:
+            log.info(
+                "[LOCAL_ACTION] no plan for %r; local tools=%s (trace=%s)",
+                user_text[:80], sorted(self._local_action_tools), trace_id,
+            )
             return None
 
         tid = trace_id or uuid4()
+        log.info(
+            "[LOCAL_ACTION] mode=%s tools=%s chat=%s trace=%s",
+            plan.mode.value,
+            [c.name for c in plan.tool_calls],
+            override is not None,
+            tid,
+        )
+        if override is not None and plan.mode != LocalActionMode.DIRECT:
+            return None
         if plan.mode == LocalActionMode.UNSUPPORTED:
             # The gate recognised an action request but no registered capability
             # covers it. Speak its deterministic rejection (response_text)
@@ -9028,6 +9057,11 @@ class BrainManager:
             for call in plan.tool_calls:
                 tool = self._local_action_tools.get(call.name)
                 if tool is None:
+                    log.warning(
+                        "[LOCAL_ACTION] tool %r is not registered in "
+                        "_local_action_tools=%s; falling back to the brain (trace=%s)",
+                        call.name, sorted(self._local_action_tools), tid,
+                    )
                     return None
                 try:
                     result = await asyncio.wait_for(
@@ -9036,10 +9070,19 @@ class BrainManager:
                             dict(call.args),
                             user_utterance=user_text,
                             trace_id=tid,
+                            config_snapshot=exec_config,
                         ),
                         timeout=timeout_s,
                     )
                 except TimeoutError:
+                    # wait_for cancels the tool coroutine but NOT the OS work it
+                    # already started: a launch may have happened. Log it so the
+                    # trace shows the real stage instead of a silent drop.
+                    log.warning(
+                        "[LOCAL_ACTION] tool=%s exceeded %.3gs; the launch may "
+                        "already have happened (trace=%s)",
+                        call.name, timeout_s, tid,
+                    )
                     await self._bus.publish(ActionExecuted(
                         trace_id=tid,
                         tool_name=call.name,
@@ -11292,6 +11335,15 @@ class BrainManager:
                     trace_id=turn_trace_id,
                 )
                 return local_action
+        else:
+            log.info(
+                "[LOCAL_ACTION] fast path not entered: has_image=%s skill_match=%s "
+                "ide_owns=%s (trace=%s)",
+                screen_context.has_image,
+                self._skill_turn_match is not None,
+                self._agentic_ide_owns_turn(user_text),
+                turn_trace_id,
+            )
 
         # Navigation fast-path: a clear "go to section X" command moves the UI
         # deterministically (a dumb action, AD-OE3). Placed BEFORE the capability
@@ -13698,6 +13750,17 @@ def _is_invalid_model_exc(msg: str) -> bool:
 #: cards and the first answer or tool round. Only a local brain has a window
 #: small enough for this to matter — see ``_fit_tools_to_context_window``.
 _CONTEXT_FIT_RESERVE_TOKENS = 4096
+
+#: Tools never trimmed from a local brain's surface (see ``_fit_tools_to_brain``).
+#: Both spellings are listed: registry keys use ``_``, entry points use ``-``.
+_PINNED_TOOL_NAMES = frozenset({
+    "search_web", "run_shell", "open_app", "switch_window", "hotkey", "type_text",
+    "list_apps", "close_app", "set_volume", "system_status",
+    "file_ops", "pc_control", "network_status",
+    "search-web", "run-shell", "open-app", "switch-window", "type-text",
+    "list-apps", "close-app", "set-volume", "system-status",
+    "file-ops", "pc-control", "network-status",
+})
 
 #: Chars per token for the size estimate. Deliberately low: tool schemas are
 #: JSON, which tokenizes denser than prose, and over-estimating costs a few

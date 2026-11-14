@@ -277,6 +277,10 @@ ROUTER_TOOLS = frozenset({
     # safe-gated action — never a spawn, so it never enters a worker tool-set
     # (AP-5/AP-14). See ADR-0011 amendment "Inline web search".
     "search-web",
+    # Fork additions (2026-11-14): everyday-PC tools the chat/voice model may
+    # call when a phrase misses the deterministic gate.
+    "list-apps", "close-app", "set-volume", "system-status",
+    "file-ops", "pc-control", "network-status",
 })
 
 # Phase 7.3 — self-mod tools are registered directly in the router loader in
@@ -667,12 +671,24 @@ def _load_local_action_tools(
     """Load hidden tools for the deterministic local-action fast path."""
     from jarvis.plugins.tool.dispatch_to_harness import DispatchToHarnessTool
     from jarvis.plugins.tool.hotkey import HotkeyTool
+    from jarvis.plugins.tool.file_ops import FileOpsTool
     from jarvis.plugins.tool.open_app import OpenAppTool
+    from jarvis.plugins.tool.pc_control import NetworkStatusTool, PcControlTool
     from jarvis.plugins.tool.reset_orb_position import ResetOrbPositionTool
+    from jarvis.plugins.tool.system_apps import CloseAppTool, ListAppsTool
+    from jarvis.plugins.tool.system_control import SetVolumeTool, SystemStatusTool
     from jarvis.plugins.tool.type_text import TypeTextTool
 
     return {
         "open_app": OpenAppTool(),
+        # Fork additions: real program listing / closing, volume, PC status.
+        "list_apps": ListAppsTool(),
+        "close_app": CloseAppTool(),
+        "set_volume": SetVolumeTool(),
+        "system_status": SystemStatusTool(),
+        "file_ops": FileOpsTool(),
+        "pc_control": PcControlTool(),
+        "network_status": NetworkStatusTool(),
         "type_text": TypeTextTool(),
         "hotkey": HotkeyTool(),
         "dispatch_to_harness": DispatchToHarnessTool(

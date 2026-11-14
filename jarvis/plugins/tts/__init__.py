@@ -786,7 +786,19 @@ def _build_provider(tts_cfg: Any, provider: str) -> Any:
         profile = voice_gender(getattr(tts_cfg, "voice_de", None)) or voice_gender(
             getattr(tts_cfg, "voice_en", None)
         )
-        return PiperLocalTTS(gender=profile, speed=tts_cfg.speed)
+        # Concrete Piper voices the settings screen stored (the curated picker
+        # writes catalogued ids); the provider applies them per turn language.
+        chosen_voices = tuple(
+            str(v)
+            for v in (
+                getattr(tts_cfg, "voice_de", None),
+                getattr(tts_cfg, "voice_en", None),
+            )
+            if v and str(v).startswith("vits-piper-")
+        )
+        return PiperLocalTTS(
+            gender=profile, speed=tts_cfg.speed, preferred_voices=chosen_voices
+        )
 
     if provider in _VERTEX_TTS_ALIASES:
         try:
