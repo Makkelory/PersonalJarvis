@@ -867,6 +867,22 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
             "highest accuracy and have the hardware for it."
         ),
     ),
+    ProviderSpec(
+        id="gigaam-local",
+        label="GigaAM (Russian, on this machine)",
+        tier="stt",
+        auth_mode="none",
+        secret_keys=(),
+        dashboard_url=None,
+        signup_url=None,
+        credential_help=(
+            "Russian-only on-device recogniser: Sber's GigaAM v3, MIT-licensed, "
+            "fully local and keyless. About 160 MB, decodes a voice command in a "
+            "tenth of a second on a plain CPU and is considerably more accurate on "
+            "Russian than the multilingual models. The model is unpacked by hand "
+            "into data/models (see jarvis/plugins/stt/gigaam_local.py)."
+        ),
+    ),
     # Deliberately last in the Voice Input picker and last among cloud runtime
     # fallbacks. It remains available for users who only have a Groq key; the
     # ordering alone de-emphasizes it (the maintainer retired the explicit
