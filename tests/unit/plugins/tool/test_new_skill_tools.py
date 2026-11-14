@@ -193,3 +193,55 @@ async def test_learn_notes_carry_the_properties_the_obsidian_base_filters_on(tmp
 
     head = (tmp_path / "jarvis-knowledge" / "Знания" / "1.1 Тема.md").read_text(encoding="utf-8").split("---")[1]
     assert "type: jarvis-knowledge" in head and "course: Computer Science" in head and "block: 1.1" in head
+
+
+def test_inflected_program_names_resolve() -> None:
+    from jarvis.plugins.tool import app_catalog
+
+    assert app_catalog.spoken_to_canonical("блокноте") == "notepad"
+    assert app_catalog.spoken_to_canonical("дискордом") == "discord"
+    assert app_catalog.spoken_to_canonical("в стиме") != "steam"  # a preposition is cut by the gate, not here
+    assert app_catalog.spoken_to_canonical("абракадабра") == "абракадабра"
+
+
+def test_app_control_refuses_destructive_controls_without_confirmation() -> None:
+    from jarvis.plugins.tool import app_control
+
+    text = app_control._do("click", {"program": "что-угодно", "element": "Удалить все данные"})
+    assert "опасным" in text
+    assert "Укажите программу" in app_control._do("inspect", {})
+    assert "Не понял сочетание" in app_control._do("hotkey", {"keys": "ctrl+неведомая"})
+
+
+def test_study_app_skips_games_installers_and_urls(monkeypatch) -> None:
+    from jarvis.plugins.tool import app_catalog, app_study
+
+    def entry(name, exe, kind="lnk"):
+        return {"name": name, "key": name.lower(), "kind": kind, "target": "x.lnk", "exe": exe}
+
+    monkeypatch.setattr(app_catalog, "_entries", [
+        entry("Discord", "C:/Users/a/Discord.exe"),
+        entry("Dota 2", "C:/Steam/steamapps/common/dota/dota2.exe"),
+        entry("Uninstall Foo", "C:/Foo/unins000.exe"),
+        entry("Steam Game Link", ""),
+        entry("Калькулятор", "", kind="uwp"),
+        entry("Notepad++", "C:/npp/notepad++.exe", kind="scan"),
+    ])
+
+    assert [e["name"] for e in app_study._candidates()] == ["Discord", "Калькулятор"]
+
+
+def test_continue_goes_to_the_study_that_asked_last(tmp_path, monkeypatch) -> None:
+    import json
+    import time
+
+    from jarvis.plugins.tool import study_course as sc
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data").mkdir()
+    assert sc.awaiting_target() is None
+    (tmp_path / "data" / "courses.json").write_text(json.dumps(
+        {"x": {"state": "active", "awaiting": time.time() - 100, "blocks": [], "done": {}}}), encoding="utf-8")
+    assert sc.awaiting_target()[0] == "study_course"
+    (tmp_path / "data" / "app_knowledge.json").write_text(json.dumps({"apps": {}, "awaiting": time.time()}), encoding="utf-8")
+    assert sc.awaiting_target() == ("study_app", {"action": "study_next"})

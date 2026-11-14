@@ -157,7 +157,15 @@ def add_user_alias(spoken: str, target: str) -> None:
 def spoken_to_canonical(name: str) -> str:
     """Map a spoken name to its Latin product name; unknown names pass through."""
     key = _spoken_key(name)
-    return _user_aliases().get(key) or RU_ALIASES.get(key) or name
+    found = _user_aliases().get(key) or RU_ALIASES.get(key)
+    if found:
+        return found
+    for cut in (1, 2, 3):  # "блокноте" -> "блокнот", "в стиме" -> "стим", "дискордом" -> "дискорд"
+        if len(key) - cut >= 3:
+            found = _user_aliases().get(key[:-cut]) or RU_ALIASES.get(key[:-cut])
+            if found and cut <= 3:
+                return found
+    return name
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +333,7 @@ def refresh_in_background() -> None:
 def _candidates(spoken: str) -> list[str]:
     key = _spoken_key(spoken)
     out: list[str] = []
-    for value in (_user_aliases().get(key), RU_ALIASES.get(key), key, _translit(key)):
+    for value in (_user_aliases().get(key), RU_ALIASES.get(key), spoken_to_canonical(spoken), key, _translit(key)):
         if value and _norm(value) not in out:
             out.append(_norm(value))
     return out

@@ -129,6 +129,27 @@ SYLLABI: dict[str, list[tuple[str, list[str]]]] = {
 }
 
 
+def awaiting_target() -> tuple[str, dict[str, Any]] | None:
+    """What the owner's bare "continue" refers to: the course or the program study that asked last."""
+    import time  # noqa: PLC0415
+
+    best: tuple[float, str, dict[str, Any]] | None = None
+    for course in _load().values():
+        stamp = course.get("awaiting") if isinstance(course, dict) else None
+        if isinstance(stamp, (int, float)) and time.time() - stamp < 3 * 3600 and course.get("state") == "active":
+            if best is None or stamp > best[0]:
+                best = (float(stamp), "study_course", {"action": "study"})
+    try:
+        from jarvis.plugins.tool import app_study  # noqa: PLC0415
+
+        stamp = app_study._load().get("awaiting")  # noqa: SLF001
+        if isinstance(stamp, (int, float)) and time.time() - stamp < 3 * 3600 and (best is None or stamp > best[0]):
+            best = (float(stamp), "study_app", {"action": "study_next"})
+    except Exception:  # noqa: BLE001
+        pass
+    return (best[1], best[2]) if best else None
+
+
 def awaiting_continue(max_age_s: float = 3 * 3600) -> bool:
     """True while a finished block waits for the owner's "continue?" answer.
 
@@ -305,7 +326,7 @@ def _queries(block: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(variants))[:4]
 
 
-async def _gather(block: dict[str, Any]) -> tuple[str, list[str]]:
+async def _gather(block: dict[str, Any], queries: list[str] | None = None) -> tuple[str, list[str]]:
     """Search the web for the block and read the best pages; returns (materials, source urls)."""
     from jarvis.plugins.tool.search_web import SearchWebTool  # noqa: PLC0415
 
@@ -320,7 +341,8 @@ async def _gather(block: dict[str, Any]) -> tuple[str, list[str]]:
                 seen.add(url)
                 results.append(item)
 
-    for query in _queries(block):
+    qs = queries or _queries(block)
+    for query in qs:
         res = await tool.execute({"query": query}, None)
         out = getattr(res, "output", None)
         if isinstance(out, dict):
@@ -328,7 +350,7 @@ async def _gather(block: dict[str, Any]) -> tuple[str, list[str]]:
         if len(results) >= 6:
             break
         await asyncio.sleep(0.5)
-    for query in _queries(block)[:2]:
+    for query in qs[:2]:
         _add(await asyncio.to_thread(_wiki_results, query))
     results.sort(key=lambda r: 0 if "wikipedia.org" in r["url"] else 1)
     snippets = "\n".join(f"- {r.get('title', '')}: {r.get('snippet', '')}" for r in results[:10])
@@ -610,14 +632,49 @@ async def _study(tool: "StudyCourseTool", key: str, blob: dict[str, Any]) -> str
             + ("Продолжить, Сэр?" if len(fresh["done"]) < len(fresh["blocks"]) else "Курс завершён."))
 
 
+def _course_runner(tool: "StudyCourseTool", key: str):
+    """(step, after) for the continuous runner: one block per step, no questions in between."""
+
+    async def step() -> tuple[bool, str, bool]:
+        blob = _load()
+        course = blob.get(key)
+        if course is None or len(course["done"]) >= len(course["blocks"]):
+            return True, "", True
+        text = await _study(tool, key, blob)
+        if text.startswith("ERROR:"):
+            return False, text[6:].strip()[:160], False
+        fresh = _load()[key]
+        m = re.search(r"(?:блок|фрагмент) (\S+) «([^»]+)»", text.splitlines()[0] if text else "")
+        line = f"{m.group(1)} «{m.group(2)[:50]}»" if m else (text.splitlines()[0][:80] if text else "")
+        return True, line, len(fresh["done"]) >= len(fresh["blocks"])
+
+    def after(reason: str) -> str:
+        blob = _load()
+        course = blob.get(key)
+        if course is None:
+            return ""
+        done, total = len(course["done"]), len(course["blocks"])
+        if done >= total:
+            course["awaiting"] = None
+            _save(blob)
+            return f"Курс «{_course_title(key)}» изучен полностью ({done} из {total})."
+        course["awaiting"] = datetime.now().timestamp()
+        course["state"] = "active"
+        _save(blob)
+        return f"Изучено {done} из {total}. Продолжить, Сэр?"
+
+    return step, after
+
+
 class StudyCourseTool:
     name: str = "study_course"
     risk_tier: str = "monitor"
     description: str = (
         "Step-by-step self-study course (default: Computer Science, ~60 blocks) and study from the owner's own files "
         "(txt/md/pdf/html in data/courses_inbox: ingest, or study with path). action: study (starts the course if "
-        "needed and RESEARCHES + WRITES + RECORDS the next block by itself: one call does everything, then report its "
-        "text to the owner), start (course), "
+        "needed and studies block after block IN THE BACKGROUND without asking in between; tell the owner it runs and "
+        "that 'стоп' stops it), stop (halts after the current block and returns the report, then ask 'Продолжить, Сэр?'), "
+        "start (course), "
         "status, next (returns the next block to study: study ONLY that block via search_web), complete "
         "(block_id, summary: your own 4-8 sentence explanation, key_terms, source: url; saves a linked Obsidian "
         "note), pause, resume, list. After complete you MUST report the result to the owner and ask whether to "
@@ -626,7 +683,7 @@ class StudyCourseTool:
     schema: dict[str, Any] = {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["study", "ingest", "start", "status", "next", "complete", "pause", "resume", "list"]},
+            "action": {"type": "string", "enum": ["study", "stop", "ingest", "start", "status", "next", "complete", "pause", "resume", "list"]},
             "course": {"type": "string", "description": "Course name; default Computer Science."},
             "path": {"type": "string", "description": "study/ingest: a file in data/courses_inbox (name) or a full path."},
             "block_id": {"type": "string"},
@@ -662,10 +719,20 @@ class StudyCourseTool:
                 if key not in blob or blob[key].get("state") == "paused":
                     await asyncio.to_thread(self._run, {"action": "start" if key not in blob else "resume", "course": key})
                     blob = _load()
-                text = await _study(self, key, blob)
-                if text.startswith("ERROR:"):
-                    return ToolResult(success=False, output=None, error=text[6:].strip())
-                return ToolResult(success=True, output=text)
+                from jarvis.plugins.tool import study_runner  # noqa: PLC0415
+
+                course = blob[key]
+                cur = next((b for b in course["blocks"] if b["id"] not in course["done"]), None)
+                if cur is None:
+                    return ToolResult(success=True, output=f"Курс «{_course_title(key)}» уже изучен полностью, Сэр.")
+                step, after = _course_runner(self, key)
+                msg = await study_runner.start(f"курс «{_course_title(key)}»", step, after)
+                return ToolResult(success=True, output=f"Сэр, {msg} Начинаю с блока {cur['id']} «{cur['title']}»; "
+                                  f"осталось блоков: {len(course['blocks']) - len(course['done'])}.")
+            if action == "stop":
+                from jarvis.plugins.tool import study_runner  # noqa: PLC0415
+
+                return ToolResult(success=True, output=await study_runner.stop())
             text = await asyncio.to_thread(self._run, args)
         except Exception as exc:  # noqa: BLE001
             logger.warning("study_course failed", exc_info=True)
@@ -715,7 +782,9 @@ class StudyCourseTool:
         if course is None:
             return f"ERROR: Курс «{key}» не начат. Вызови start."
         if action == "status":
-            return _status(course, key)
+            from jarvis.plugins.tool import study_runner  # noqa: PLC0415
+
+            return (study_runner.status_text() + " " if study_runner.is_running() else "") + _status(course, key)
         if action == "pause":
             course["state"] = "paused"
             _save(blob)

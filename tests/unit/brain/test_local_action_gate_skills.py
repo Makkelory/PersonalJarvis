@@ -6,6 +6,12 @@ import pytest
 from jarvis.brain.local_action_gate import match_local_action
 
 
+@pytest.fixture(autouse=True)
+def _isolated_study_state(tmp_path, monkeypatch) -> None:
+    """The gate reads data/courses.json and data/app_knowledge.json of the working folder."""
+    monkeypatch.chdir(tmp_path)
+
+
 def _call(phrase: str) -> tuple[str, dict]:
     plan = match_local_action(phrase)
     assert plan is not None, phrase
@@ -89,3 +95,23 @@ def test_the_builtin_course_name_is_not_taken_for_a_file() -> None:
 ])
 def test_skill_from_knowledge_phrases(phrase: str, expected: tuple[str, dict]) -> None:
     assert _call(phrase) == expected
+
+
+@pytest.mark.parametrize("phrase,expected", [
+    ("изучи программу хапп", ("study_app", {"action": "study", "program": "хапп"})),
+    ("научись пользоваться дискордом", ("study_app", {"action": "study", "program": "дискорд"})),
+    ("изучи все программы", ("study_app", {"action": "study_next"})),
+    ("что есть в хапп", ("app_control", {"action": "inspect", "program": "хапп"})),
+    ("нажми Поиск в спотифай", ("app_control", {"action": "click", "program": "спотифай", "element": "Поиск"})),
+    ("введи Привет в блокнот", ("app_control", {"action": "type", "program": "блокнот", "text": "Привет"})),
+    ("нажми ctrl+shift+t", ("app_control", {"action": "hotkey", "keys": "ctrl+shift+t"})),
+])
+def test_program_use_phrases(phrase: str, expected: tuple[str, dict]) -> None:
+    got = _call(phrase)
+    assert got[0] == expected[0]
+    assert {k: v for k, v in got[1].items() if k != "program"} == {k: v for k, v in expected[1].items() if k != "program"}
+
+
+def test_files_and_courses_are_not_taken_for_programs() -> None:
+    assert _call("изучи файл терминал")[0] == "study_course"
+    assert _call("изучи курс computer science")[0] == "study_course"

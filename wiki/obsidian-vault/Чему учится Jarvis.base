@@ -29,9 +29,9 @@ views:
     name: Всё, чему учится Jarvis
     order:
       - file.name
-      - note.type
-      - note.course
-      - note.module
+      - type
+      - course
+      - module
       - file.mtime
     sort:
       - property: file.mtime
@@ -42,15 +42,15 @@ views:
       and:
         - note.type == "jarvis-knowledge"
     groupBy:
-      property: note.course
+      property: course
       direction: ASC
     order:
-      - note.block
+      - block
       - file.name
-      - note.module
+      - module
       - file.mtime
     sort:
-      - property: note.block
+      - property: block
         direction: ASC
   - type: table
     name: Курсы и прогресс
@@ -59,9 +59,9 @@ views:
         - note.type == "jarvis-course"
     order:
       - file.name
-      - note.done
-      - note.total
-      - note.state
+      - done
+      - total
+      - state
       - file.mtime
   - type: table
     name: Справочники приёмов
@@ -70,7 +70,7 @@ views:
         - note.type == "jarvis-playbook"
     order:
       - file.name
-      - note.course
+      - course
       - file.mtime
   - type: table
     name: Навыки

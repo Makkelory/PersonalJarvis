@@ -27,7 +27,7 @@ _FOLDER = "jarvis-knowledge"
 _TOOL_PROGRAMS = {
     "spotify_control": ["Spotify"], "steam_control": ["Steam"], "happ_vpn": ["Happ"],
     "open_app": [], "close_app": [], "window_control": [], "app_catalog": [], "browser_control": [],
-    "memory_notes": [], "scenes": ["Spotify", "Steam"], "study_course": [], "skill_from_knowledge": [],
+    "memory_notes": [], "scenes": ["Spotify", "Steam"], "study_course": [], "skill_from_knowledge": [], "app_control": [], "study_app": [],
 }
 _BAD = re.compile(r'[\\/:*?"<>|#^\[\]]')
 
@@ -55,11 +55,13 @@ def _tool_classes() -> dict[str, Any]:
     from jarvis.plugins.tool.scenes import ScenesTool
     from jarvis.plugins.tool.study_course import StudyCourseTool
     from jarvis.plugins.tool.skill_from_knowledge import SkillFromKnowledgeTool
+    from jarvis.plugins.tool.app_control import AppControlTool
+    from jarvis.plugins.tool.app_study import StudyAppTool
 
     tools = [OpenAppTool, CloseAppTool, ListAppsTool, SetVolumeTool, SystemStatusTool, FileOpsTool, PcControlTool,
              NetworkStatusTool, SetTimerTool, GetWeatherTool, GetRatesTool, CalculateTool, SpotifyControlTool,
              SteamControlTool, HappVpnTool, WindowControlTool, AppCatalogTool, BrowserControlTool, MemoryNotesTool,
-             ScenesTool, StudyCourseTool, SkillFromKnowledgeTool]
+             ScenesTool, StudyCourseTool, SkillFromKnowledgeTool, AppControlTool, StudyAppTool]
     return {cls.name: cls for cls in tools}
 
 
@@ -122,6 +124,9 @@ def export(vault_root: Path | str = Path("wiki/obsidian-vault")) -> dict[str, in
         if spoken:
             lines.append("- Называется голосом: " + ", ".join(spoken))
         lines.append("")
+        manual = Path(vault_root) / _FOLDER / "Знания" / f"Как пользоваться {name}.md"
+        if manual.exists():
+            lines += [f"Как пользоваться: [[{_FOLDER}/Знания/Как пользоваться {name}|Как пользоваться {name}]]", ""]
         drivers = tool_for_program.get(name, [])
         if drivers:
             lines += ["## Инструменты", ""] + [f"- [[{_FOLDER}/Умения/{t}|{t}]]" for t in drivers] + [""]

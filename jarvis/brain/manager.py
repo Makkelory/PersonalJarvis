@@ -13791,8 +13791,10 @@ _LOCAL_TOOL_TIMEOUTS_S: dict[str, float] = {
     "app_catalog": 90.0,
     "window_control": 20.0,
     "browser_control": 20.0,
-    "study_course": 420.0,
+    "study_course": 520.0,
     "skill_from_knowledge": 420.0,
+    "app_control": 90.0,
+    "study_app": 600.0,
     "scenes": 150.0,
     "list_apps": 60.0,
     "file_ops": 45.0,
@@ -13816,6 +13818,7 @@ _PINNED_TOOL_NAMES = frozenset({
     "window_control", "app_catalog", "window-control", "app-catalog",
     "browser_control", "memory_notes", "scenes", "browser-control", "memory-notes",
     "study_course", "study-course", "skill_from_knowledge", "skill-from-knowledge",
+    "app_control", "app-control", "study_app", "study-app",
 })
 
 #: Chars per token for the size estimate. Deliberately low: tool schemas are

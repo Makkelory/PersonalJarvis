@@ -1617,12 +1617,66 @@ _WORD_NUM = {"два": 2, "три": 3, "четыре": 4}
 
 
 _COURSE_STATUS_RE = re.compile(
-    _PRE + r"(?:(?:какой\s+)?статус\s+(?:курса|обучения)|как\s+(?:идёт|идет|продвигается)\s+(?:курс|обучение)|что\s+ты\s+(?:уже\s+)?изучил|сколько\s+(?:ты\s+)?(?:уже\s+)?изучил)[\s?.!]*$",
+    _PRE + r"(?:(?:какой\s+)?статус\s+(?:курса|обучения|изучения)|как\s+(?:идёт|идет|продвигается)\s+(?:курс|обучение|изучение)|что\s+ты\s+(?:сейчас\s+)?изучаешь|что\s+ты\s+(?:уже\s+)?изучил|сколько\s+(?:ты\s+)?(?:уже\s+)?изучил)[\s?.!]*$",
     re.I,
 )
 _COURSE_PAUSE_RE = re.compile(
     _PRE + r"(?:останови|приостанови|поставь\s+на\s+паузу)\s+(?:курс|обучение)|пауза\s+(?:курса|обучения)[\s?.!]*$", re.I,
 )
+
+
+_APP_STUDY_ALL_RE = re.compile(
+    _PRE + r"(?:изучи|изучай|освой|научись\s+пользоваться)\s+(?:все\s+|всеми\s+|всё\s+)?(?:программы|программами|приложения|приложениями|"
+    r"все\s+программы|что\s+(?:ты\s+)?видишь|всем,?\s+что\s+(?:ты\s+)?видишь|компьютером)[\s!.?]*$", re.I,
+)
+_APP_STUDY_RE = re.compile(
+    _PRE + r"(?:изучи|изучай|освой|научись\s+пользоваться|научись\s+работать\s+(?:в|с))\s+(?:программой\s+|программу\s+|приложением\s+|приложение\s+)?"
+    r"(?P<n>[\w .\-+]{2,40}?)[\s!.?]*$", re.I,
+)
+_APP_INSPECT_RE = re.compile(
+    _PRE + r"(?:что\s+есть\s+в|покажи\s+(?:кнопки|элементы|меню)\s+(?:в\s+)?|какие\s+(?:кнопки|элементы)\s+(?:есть\s+)?в)\s*(?:программе\s+)?(?P<p>[\w .\-+]{2,40}?)[\s?.!]*$", re.I,
+)
+_APP_CLICK_RE = re.compile(
+    _PRE + r"(?:нажми|кликни|клацни)\s+(?:на\s+|по\s+)?(?:кнопку\s+)?(?P<e>[^,]{1,60}?)\s+(?:в|во|на)\s+(?P<p>[\w .\-+]{2,40}?)[\s?.!]*$", re.I,
+)
+_APP_TYPE_RE = re.compile(
+    _PRE + r"(?:введи|напиши|набери|впиши)\s+(?P<t>.{1,200}?)\s+(?:в|во)\s+(?P<p>[\w .\-+]{2,40}?)[\s?.!]*$", re.I,
+)
+_APP_HOTKEY_RE = re.compile(
+    _PRE + r"нажми\s+(?P<k>(?:ctrl|alt|shift|win|control|f\d{1,2})(?:\s*\+\s*[\w+\-,./]+)+)(?:\s+(?:в|во)\s+(?P<p>[\w .\-+]{2,40}?))?[\s?.!]*$", re.I,
+)
+_NOT_PROGRAM = re.compile(r"^(?:файл\w*|курс\w*|материал\w*|документ\w*|навык\w*|знани\w+|папк\w+|сайт\w*)(?:\s|$)", re.I)
+
+
+def _match_program_use(original: str) -> LocalActionPlan | None:
+    """Studying programs and operating any program through its interface (fork addition)."""
+
+    def plan(tool: str, args: dict[str, object]) -> LocalActionPlan:
+        return LocalActionPlan(mode=LocalActionMode.DIRECT, tool_calls=(LocalToolCall(name=tool, args=args),))
+
+    if _APP_STUDY_ALL_RE.match(original):
+        return plan("study_app", {"action": "study_next"})
+    m = _APP_HOTKEY_RE.match(original)
+    if m is not None:
+        keys = re.sub(r"\s+", "", m.group("k"))
+        args: dict[str, object] = {"action": "hotkey", "keys": keys}
+        if m.group("p"):
+            args["program"] = _window_name(m.group("p"))
+        return plan("app_control", args)
+    m = _APP_INSPECT_RE.match(original)
+    if m is not None:
+        return plan("app_control", {"action": "inspect", "program": _window_name(m.group("p"))})
+    m = _APP_TYPE_RE.match(original)
+    if m is not None:
+        return plan("app_control", {"action": "type", "program": _window_name(m.group("p")), "text": m.group("t").strip(" \"'")})
+    m = _APP_CLICK_RE.match(original)
+    if m is not None and not _NOT_PROGRAM.match(m.group("e")):
+        return plan("app_control", {"action": "click", "program": _window_name(m.group("p")), "element": m.group("e").strip(" \"'")})
+    m = _APP_STUDY_RE.match(original)
+    if m is not None and not _NOT_PROGRAM.match(m.group("n")) and not re.match(
+            r"^(?:computer\s+science|компьютер\s+саенс|информатик\w*)$", m.group("n").strip(), re.I):
+        return plan("study_app", {"action": "study", "program": _window_name(m.group("n"))})
+    return None
 
 
 def _match_new_skills(original: str) -> LocalActionPlan | None:
@@ -1729,6 +1783,10 @@ _COURSE_RUN_RE = re.compile(
     r"(?:следующий\s+блок|следующий\s+урок|(?:курс|обучение)(?:\s+(?:по\s+)?(?:computer\s+science|компьютер\s+саенс|информатике|информатика|computer-science))?|"
     r"computer\s+science|компьютер\s+саенс)[\s!.?]*$", re.I,
 )
+_STOP_STUDY_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:стоп|стой|остановись|хватит|прекрати|довольно|достаточно|"
+    r"останови(?:\s+(?:обучение|изучение|курс|учёбу|учебу))?|стоп\s+(?:обучение|изучение|курс))[\s!.?]*$", re.I,
+)
 _CONTINUE_WORD_RE = re.compile(
     r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:давай\s+)?(?:дальше|продолжай|продолжи|продолжить|вперед|вперёд|да|ага|"
     r"погнали|поехали|играй|следующий|следующую|следующий\s+блок|далее)[\s!.?]*$", re.I,
@@ -1815,14 +1873,23 @@ def match_local_action(
     original = _drop_wake_tokens(text.strip())
     if not original:
         return None
+    if _STOP_STUDY_RE.match(original):
+        from jarvis.plugins.tool import study_runner  # noqa: PLC0415
+
+        if study_runner.is_running():
+            return LocalActionPlan(
+                mode=LocalActionMode.DIRECT,
+                tool_calls=(LocalToolCall(name="study_course", args={"action": "stop"}),),
+            )
     if _CONTINUE_WORD_RE.match(original):
         from jarvis.plugins.tool import study_course  # noqa: PLC0415
 
-        if study_course.awaiting_continue():
-            # the course asked "continue?": this answer studies the next block (not Spotify)
+        target = study_course.awaiting_target()
+        if target is not None:
+            # a study asked "continue?": this answer continues it (not Spotify)
             return LocalActionPlan(
                 mode=LocalActionMode.DIRECT,
-                tool_calls=(LocalToolCall(name="study_course", args={"action": "study"}),),
+                tool_calls=(LocalToolCall(name=target[0], args=dict(target[1])),),
             )
 
     normalized = _normalize(original)
@@ -1900,6 +1967,9 @@ def match_local_action(
     skills_plan = _match_new_skills(original)
     if skills_plan is not None:
         return skills_plan
+    use_plan = _match_program_use(original)
+    if use_plan is not None:
+        return use_plan
     catalog_plan = _match_open_from_catalog(original)
     if catalog_plan is not None:
         return catalog_plan
