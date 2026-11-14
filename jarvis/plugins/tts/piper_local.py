@@ -276,6 +276,7 @@ class PiperLocalTTS:
         fx_settings = voice_fx.current_settings()
         pitch_factor = 2.0 ** (fx_settings.pitch / 12.0)
         # Piper's length reacts to ``speed`` only about half as strongly as 1/speed (measured), hence the exponent.
+        # The pace ([tts.fx] pace) is applied afterwards by a pitch-preserving time stretch, see voice_fx.stretch.
         speed_eff = max(0.5, min(2.0, self._speed / pitch_factor ** 1.8))
 
         def _generate() -> None:
@@ -317,7 +318,7 @@ class PiperLocalTTS:
         self.last_voice = model_id
         self.last_voice_provider = self.name
         # Fork addition: optional "assistant" colour ([tts.fx] in jarvis.toml), see jarvis/audio/voice_fx.py.
-        fx = voice_fx.VoiceFx(fx_settings) if fx_settings.active else None
+        fx = voice_fx.VoiceFx(fx_settings) if (fx_settings.active or fx_settings.pace < 0.99) else None
         last_rate = 0
         try:
             while True:

@@ -17,6 +17,7 @@ changes, so the colour can be tuned by ear without restarting the app::
     preset = "jarvis"   # "off" to disable
     strength = 0.6      # 0.0 .. 1.0
     pitch = -1.5        # semitones, -6 .. +3 (works even with preset = "off")
+    pace = 0.9          # speaking pace: 1.0 normal, 0.9 about 10 % slower, 1.1 faster (0.6 .. 1.3)
 
 State is carried from chunk to chunk, so processing never clicks at chunk joins.
 """
@@ -44,6 +45,7 @@ class FxSettings:
     preset: str = "off"
     strength: float = 0.6
     pitch: float = 0.0  # semitones; negative = deeper voice, same speed
+    pace: float = 1.0  # speaking pace; below 1 = slower
 
     @property
     def active(self) -> bool:
@@ -73,7 +75,8 @@ def current_settings() -> FxSettings:
         if isinstance(table, dict):
             strength = float(table.get("strength", 0.6))
             pitch = max(-6.0, min(3.0, float(table.get("pitch", 0.0))))
-            settings = FxSettings(str(table.get("preset", "off")), max(0.0, min(_MAX_STRENGTH, strength)), pitch)
+            pace = max(0.6, min(1.3, float(table.get("pace", 1.0))))
+            settings = FxSettings(str(table.get("preset", "off")), max(0.0, min(_MAX_STRENGTH, strength)), pitch, pace)
     except Exception:  # noqa: BLE001 - a broken file must not silence the voice
         log.warning("voice_fx: could not read [tts.fx]", exc_info=True)
     _cache = (mtime, settings)
@@ -81,9 +84,9 @@ def current_settings() -> FxSettings:
 
 
 def for_turn() -> VoiceFx | None:
-    """A fresh processor for one utterance, or None when the effect is off."""
+    """A fresh processor for one utterance, or None when neither colour nor pace is set."""
     settings = current_settings()
-    return VoiceFx(settings) if settings.active else None
+    return VoiceFx(settings) if settings.active or settings.pace < 0.99 else None
 
 
 # --------------------------------------------------------------- biquads (RBJ cookbook)
@@ -116,10 +119,54 @@ def _biquad(kind: str, fs: float, f0: float, gain_db: float = 0.0, q: float = 0.
     return np.array([b[0] / a0, b[1] / a0, b[2] / a0, 1.0, a[1] / a0, a[2] / a0])
 
 
+def stretch(x: np.ndarray, rate: int, factor: float) -> np.ndarray:
+    """Pitch-preserving time stretch (WSOLA): ``factor`` 1.25 makes the speech 25 % longer, same pitch.
+
+    Piper's own speed knob barely slows the voice down (measured: speed 0.5 gives only 1.5x longer, with noise), so the
+    pace is set here. Each utterance chunk is stretched on its own; its first and last half-frames are left unwindowed
+    so chunk edges keep their full level.
+    """
+    from scipy.signal.windows import hann  # noqa: PLC0415
+
+    if abs(factor - 1.0) < 0.01 or x.size < rate // 10:
+        return x
+    n = max(64, int(0.030 * rate) // 2 * 2)
+    hs = n // 2
+    tol = n // 4
+    ha = hs / factor
+    padded = np.concatenate([x, np.zeros(n + tol + 8, dtype=x.dtype)])
+    win = hann(n, sym=False).astype(np.float32)
+    frames = max(2, int((x.size - 1) / ha))
+    out = np.zeros(frames * hs + n + 1, dtype=np.float32)
+    out[:hs] = padded[:hs]
+    out[hs:n] += padded[hs:n] * win[hs:]
+    prev = 0
+    for k in range(1, frames):
+        nominal = int(round(k * ha))
+        target = padded[prev + hs: prev + hs + n]
+        lo = max(0, nominal - tol)
+        hi = min(padded.size - n, nominal + tol)
+        if hi <= lo:
+            cand = min(nominal, padded.size - n)
+        else:
+            seg = padded[lo: hi + n]
+            if seg.size < target.size:
+                cand = lo
+            else:
+                cand = lo + int(np.argmax(np.correlate(seg, target, "valid")[: hi - lo + 1]))
+        out[k * hs: k * hs + n] += padded[cand: cand + n] * win
+        prev = cand
+    end = (frames - 1) * hs
+    out[end + hs: end + n] += padded[prev + hs: prev + n] * (1.0 - win[hs:])  # the last half-frame stays at full level
+    return out[: min(end + n, int(round(x.size * factor)))]  # drop the zero padding that only served the last frame
+
+
 class VoiceFx:
     """Streaming processor: ``process(pcm16, rate)`` per chunk, ``flush()`` once at the end."""
 
     def __init__(self, settings: FxSettings) -> None:
+        self.colour = settings.active  # False: only the pace is applied
+        self.pace = settings.pace
         self.s = settings.strength
         self._rate = 0
         self._sos: np.ndarray | None = None
@@ -207,12 +254,14 @@ class VoiceFx:
         if self._rate != rate:
             self._setup(rate)
         x = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
-        y = self._run(x)
+        if self.pace < 0.99:
+            x = stretch(x, rate, 1.0 / self.pace)
+        y = self._run(x) if self.colour else x
         return (np.clip(y, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
 
     def flush(self) -> bytes:
         """The decaying tail of the last words (reflections and echo), so the end does not stop dead."""
-        if not self._rate:
+        if not self._rate or not self.colour:
             return b""
         silence = np.zeros(int(self._rate * _TAIL_S), dtype=np.float32)
         y = self._run(silence)
@@ -220,4 +269,4 @@ class VoiceFx:
         return (np.clip(y * fade, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
 
 
-__all__: list[Any] = ["FxSettings", "VoiceFx", "current_settings", "for_turn"]
+__all__: list[Any] = ["FxSettings", "VoiceFx", "current_settings", "for_turn", "stretch"]

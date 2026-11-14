@@ -17606,10 +17606,13 @@ class SpeechPipeline:
         constant stutter / multi-second pauses on the Intel-Mac test machine).
         """
         from jarvis.realtime.desktop import DesktopRealtimeBargeInDetector
+        from jarvis.speech import barge_config
 
+        # Fork addition: [voice.barge] in jarvis.toml tunes how easily the owner can interrupt (see barge_config.py).
+        knobs = {"grace_s": grace_s, **barge_config.current().detector_kwargs()}
         detector = DesktopRealtimeBargeInDetector(
-            grace_s=grace_s,
             output_active=level_tap.playback_active,
+            **knobs,
         )
         try:
             # Model load off the event loop — it shares the turn with live

@@ -304,3 +304,28 @@ def test_a_lower_pitch_speaks_faster_and_announces_a_lower_sample_rate(all_voice
 
     assert seen["speed"] > 1.1  # faster generation ...
     assert rates and all(r < 22_050 for r in rates) and abs(rates[0] - 22_050 * 2 ** (-2 / 12)) < 5  # ... lower rate
+
+
+
+def test_a_slower_pace_stretches_the_audio_without_touching_the_voice_speed(all_voices_installed, monkeypatch) -> None:
+    """Fork addition: [tts.fx] pace = 0.8 -> the speech comes out 25 % longer (pitch-preserving stretch)."""
+    from jarvis.audio import voice_fx
+    from jarvis.audio.voice_fx import FxSettings
+
+    seen: dict[str, float] = {}
+
+    class _Engine(_FakeEngine):
+        def generate(self, text, speaker_id, speed, **kw):
+            seen["speed"] = speed
+            t = np.arange(22_050) / 22_050
+            audio = _FakeAudio(seconds=0.0)
+            audio.samples = (0.3 * np.sin(2 * np.pi * 180 * t)).astype(np.float32)
+            return audio
+
+    monkeypatch.setattr(PiperLocalTTS, "_build_engine", lambda self, model_id: _Engine(model_id))
+    monkeypatch.setattr(voice_fx, "current_settings", lambda: FxSettings("off", 0.0, 0.0, 0.8))
+
+    pcm = asyncio.run(_speak(PiperLocalTTS(), "Доброе утро", "ru-RU"))
+
+    assert seen["speed"] == 1.0
+    assert 1.15 * 22_050 * 2 < len(pcm) < 1.35 * 22_050 * 2  # about 1.25 s of 16-bit samples

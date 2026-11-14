@@ -95,6 +95,32 @@ def _intent(topic: str, knowledge: str) -> str:
     )
 
 
+def sanitize_skill_file(path: str | Path, name: str) -> bool:
+    """Make an AI-authored skill safe: draft, no schedule, and ONE explicit voice trigger.
+
+    The small local model sometimes invents a ``* * * * *`` schedule (the skill then ran every minute and talked over
+    the owner) and keyword triggers like ``(файл|папка|диск)`` that swallow everyday phrases before the command gate
+    sees them. A skill built from knowledge may only start by name: "используй навык <имя>".
+    """
+    import yaml  # noqa: PLC0415
+
+    target = Path(path)
+    if not target.is_file():
+        return False
+    text = target.read_text(encoding="utf-8")
+    m = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.S)
+    if not m:
+        return False
+    meta = yaml.safe_load(m.group(1)) or {}
+    skill = str(meta.get("name") or name)
+    meta["triggers"] = [{"type": "voice", "pattern": rf"^(?:используй|запусти|включи)\s+навык\s+{re.escape(skill.lower())}\b",
+                         "language": ["ru", "en"]}]
+    meta["state"] = "draft"
+    body = yaml.safe_dump(meta, allow_unicode=True, sort_keys=False, width=100).rstrip("\n")
+    target.write_text(f"---\n{body}\n---\n{m.group(2)}", encoding="utf-8")
+    return True
+
+
 def _record(name: str, topic: str, notes: list[tuple[Path, str]], draft_path: str) -> None:
     folder = _VAULT / "jarvis-knowledge" / "Навыки"
     folder.mkdir(parents=True, exist_ok=True)
@@ -128,6 +154,10 @@ async def make_skill(topic: str, ctx: Any = None, course_title: str = "", module
     if not result.success or not isinstance(result.output, dict):
         return False, f"Не удалось создать навык: {result.error or 'ответ без данных'}", {}
     out = result.output
+    try:
+        await asyncio.to_thread(sanitize_skill_file, str(out.get("path", "")), str(out.get("skill_name", topic)))
+    except Exception:  # noqa: BLE001 - a failed clean-up must be visible, not silent
+        logger.warning("skill_from_knowledge: could not sanitize %s", out.get("path"), exc_info=True)
     await asyncio.to_thread(_record, out.get("skill_name", topic), topic, notes, str(out.get("path", "")))
     voice = ", ".join(str(v) for v in (out.get("voice_triggers") or [])[:2]) or "по описанию"
     steps = "; ".join(str(s) for s in (out.get("steps_preview") or [])[:3])

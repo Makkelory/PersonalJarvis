@@ -348,3 +348,25 @@ def test_without_a_reachable_player_bar_the_media_key_is_the_fallback(monkeypatc
     monkeypatch.setattr(sp, "_wait_title_change", lambda before, timeout=3.5: "Artist - Song")
 
     assert sp._do("play_pause") == "Играет: Artist - Song." and keys == [0xB3]
+
+
+def test_a_generated_skill_loses_its_schedule_and_keyword_triggers(tmp_path) -> None:
+    import re
+
+    import yaml
+
+    from jarvis.plugins.tool import skill_from_knowledge as sk
+
+    skill = tmp_path / "SKILL.md"
+    skill.write_text("---\nname: windows-3\nstate: active\ntriggers:\n- type: voice\n  pattern: (файл|папка|диск)\n"
+                     "- type: schedule\n  cron: '* * * * *'\n---\n# Цель\nШаги\n", encoding="utf-8")
+
+    assert sk.sanitize_skill_file(skill, "windows-3")
+
+    text = skill.read_text(encoding="utf-8")
+    meta = yaml.safe_load(re.match(r"^---\n(.*?)\n---\n", text, re.S).group(1))
+    assert meta["state"] == "draft"
+    assert [t["type"] for t in meta["triggers"]] == ["voice"]
+    pattern = re.compile(meta["triggers"][0]["pattern"])
+    assert pattern.match("используй навык windows-3") and not pattern.search("открой папку с файлами")
+    assert text.endswith("# Цель\nШаги\n")

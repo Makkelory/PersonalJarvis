@@ -12954,6 +12954,17 @@ class BrainManager:
                     await task
                 except (asyncio.CancelledError, Exception):  # noqa: BLE001
                     pass
+                # Fork addition: the owner spoke over the answer (barge-in) and the consumer cancelled us before
+                # generate() could write the turn into the history. Keep what was said, so the next request is
+                # understood in context ("а что ты имел в виду?"), and say that it was cut short.
+                if use_history and accumulated.strip():
+                    self._history.append(BrainMessage(role="user", content=user_text))
+                    self._history.append(BrainMessage(
+                        role="assistant",
+                        content=accumulated.rstrip() + "\n[Сэр перебил этот ответ; конец он мог не услышать.]",
+                    ))
+                    if len(self._history) > 40:
+                        self._history = self._history[-40:]
 
     # ------------------------------------------------------------------
     # Summarize — for Jarvis-Agent-Announcements (Phase 5, Wave-4 rebrand)
