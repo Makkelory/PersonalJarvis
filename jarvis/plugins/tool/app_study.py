@@ -55,7 +55,7 @@ def _save(blob: dict[str, Any]) -> None:
 
 def awaiting() -> bool:
     stamp = _load().get("awaiting")
-    return isinstance(stamp, (int, float)) and time.time() - stamp < 3 * 3600
+    return isinstance(stamp, (int, float)) and time.time() - stamp < 20 * 60
 
 
 def _candidates() -> list[dict[str, Any]]:
