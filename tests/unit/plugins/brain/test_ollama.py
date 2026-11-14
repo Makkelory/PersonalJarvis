@@ -579,3 +579,16 @@ async def test_discovered_model_is_tuned_like_a_pinned_one(monkeypatch, wired, f
     await _run(brain, _req())
     model, _ = _FakeStreamer.calls[0]
     assert model == "qwen3.5-4b-jarvis-deadbeef"
+
+
+@pytest.mark.asyncio
+async def test_adapter_without_a_model_honours_the_configured_one(monkeypatch) -> None:
+    """Chat turns build the adapter model-less; the config's model must still win over discovery."""
+    from types import SimpleNamespace
+
+    from jarvis.plugins.brain import ollama as ollama_mod
+
+    fake = SimpleNamespace(brain=SimpleNamespace(providers={"ollama": SimpleNamespace(model="qwen3.5:9b", models={})}))
+    monkeypatch.setattr(ollama_mod.cfg, "load_config", lambda: fake)
+
+    assert await ollama_mod.OllamaBrain()._resolve_model() == "qwen3.5:9b"

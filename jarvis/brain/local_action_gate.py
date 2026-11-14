@@ -876,13 +876,17 @@ _PC_SIMPLE: tuple[tuple[re.Pattern[str], str, dict[str, object]], ...] = tuple(
         (r"сверни\s+(?:это\s+|текущее\s+|активное\s+)?окно", "pc_control", {"action": "minimize_window"}),
         (r"разверни\s+(?:это\s+|текущее\s+|активное\s+)?окно(?:\s+на\s+весь\s+экран)?", "pc_control", {"action": "maximize_window"}),
         (r"закрой\s+(?:это\s+|текущее\s+|активное\s+)окно|закрой\s+окно", "pc_control", {"action": "close_window"}),
-        (r"пауза|поставь\s+на\s+паузу|продолжи\s+(?:музыку|воспроизведение)|включи\s+паузу",
-         "spotify_control", {"action": "play_pause"}),
-        (r"(?:включи|запусти|поставь)\s+(?:снова\s+|опять\s+)?музыку(?:\s+(?:в|на)\s+(?:спотифай|spotify))?"
-         r"|возобнови\s+(?:музыку|воспроизведение)|верни\s+музыку", "spotify_control", {"action": "play_pause"}),
-        (r"следующ\w+\s+(?:трек|песн\w+|композици\w+)|переключи\s+(?:трек|песню)|включи\s+следующ\w+",
+        (r"пауза|поставь\s+на\s+паузу|(?:останови|поставь\s+на\s+паузу|выключи|выруби|заглуши)\s+(?:музыку|песню|трек|воспроизведение|плеер)"
+         r"|стоп|стой|тихо|хватит\s+музыки|включи\s+паузу",
+         "spotify_control", {"action": "pause"}),
+        (r"(?:включи|запусти|поставь|врубай|врубай|вруби|давай)\s+(?:снова\s+|опять\s+|какую-нибудь\s+|мою\s+)?(?:музыку|музон|песни|песню|плеер|спотифай|spotify)(?:\s+(?:в|на)\s+(?:спотифай|spotify))?"
+         r"|(?:возобнови|продолжи|продолжай)(?:\s+(?:музыку|воспроизведение|играть))?|верни\s+музыку|играй|плей|продолжить|воспроизведи",
+         "spotify_control", {"action": "play"}),
+        (r"следующ\w+(?:\s+(?:трек|песн\w+|композици\w+))?|переключи(?:\s+(?:трек|песню|на\s+следующ\w+))?|включи\s+следующ\w+"
+         r"|дальше|вперед|вперёд|скип|пропусти(?:\s+(?:трек|песню))?|next|другую\s+(?:песню|трек)|переключи\s+музыку|смени\s+(?:трек|песню)",
          "spotify_control", {"action": "next"}),
-        (r"предыдущ\w+\s+(?:трек|песн\w+|композици\w+)|включи\s+предыдущ\w+", "spotify_control", {"action": "previous"}),
+        (r"предыдущ\w+(?:\s+(?:трек|песн\w+|композици\w+))?|включи\s+предыдущ\w+|назад|верни\s+(?:трек|песню)|прошл\w+\s+(?:трек|песн\w+)|previous|заново(?:\s+(?:трек|песню))?",
+         "spotify_control", {"action": "previous"}),
         (r"который\s+час|сколько\s+(?:сейчас\s+)?времени|какое\s+сегодня\s+число|какая\s+сегодня\s+дата|какой\s+сегодня\s+день",
          "pc_control", {"action": "time"}),
         (r"что\s+(?:сейчас\s+)?в\s+буфере\s+обмена|покажи\s+буфер\s+обмена", "pc_control", {"action": "clipboard_get"}),
@@ -1200,7 +1204,15 @@ _STEAM_INSTALL_RE = re.compile(
     re.I,
 )
 _STEAM_RUN_RE = re.compile(
-    _WAKE_PREFIX + r"(?:запусти|включи)\s+(?P<g>[^,]+?)\s+(?:в|через)\s+" + _STEAM_WORD, re.I,
+    _WAKE_PREFIX + r"(?:запусти|включи|открой)\s+(?:игру\s+)?(?P<g>[^,]+?)\s+(?:в|через)\s+" + _STEAM_WORD, re.I,
+)
+# "открой в стиме Dota 2" / "открой стим игру Dota 2": the game comes after Steam.
+_STEAM_RUN_AFTER_RE = re.compile(
+    _WAKE_PREFIX + r"(?:запусти|включи|открой)\s+(?:(?:в|через)\s+" + _STEAM_WORD + r"|" + _STEAM_WORD + r")\s+(?:игру\s+)?(?P<g>[^,]+?)[\s?.!]*$", re.I,
+)
+# Just opening the client: "открой стим", "открой игру в стиме" (no game named).
+_STEAM_OPEN_RE = re.compile(
+    _WAKE_PREFIX + r"(?:запусти|включи|открой|открыть|запустить)\s+(?:(?:игру|игры|библиотеку)\s+(?:в|через)\s+)?(?:(?:в|через)\s+)?" + _STEAM_WORD + r"(?:\s+(?:игру|игры))?[\s?.!]*$", re.I,
 )
 _STEAM_DOWNLOADS_RE = re.compile(
     _WAKE_PREFIX + r"(?:(?:открой|покажи)\s+загрузки\s+(?:в\s+)?(?:" + _STEAM_WORD + r"|стима)|что\s+(?:сейчас\s+)?качается\s+в\s+" + _STEAM_WORD + r")",
@@ -1319,7 +1331,9 @@ def _match_apps(text: str, original: str) -> LocalActionPlan | None:
     inst = _STEAM_INSTALL_RE.match(original)
     if inst is not None:
         return plan("steam_control", {"action": "install", "game": inst.group("g").strip()})
-    run = _STEAM_RUN_RE.match(original)
+    if _STEAM_OPEN_RE.match(text):
+        return plan("open_app", {"app_name": "steam"})
+    run = _STEAM_RUN_RE.match(original) or _STEAM_RUN_AFTER_RE.match(original)
     if run is not None:
         return plan("steam_control", {"action": "run", "game": run.group("g").strip()})
     if _HAPP_PING_RE.match(text):
@@ -1490,6 +1504,344 @@ def _get_capability_registry() -> _CapabilityRegistryLike | None:
         return None
 
 
+_WIN_MOVE_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис|jarvis)?[\s,]*(?:пожалуйста\s+)?(?:перенеси|перемести|передвинь|перекинь|кинь|отправь|закинь|переставь|двигай|перетащи)\s+"
+    r"(?P<w>.*?)\s*(?:на|в|во)\s+(?P<tail>(?:[\wё]+\s+)?(?:монитор|экран|дисплей)(?:\s+(?:номер\s+)?[\wё]+)?)[\s?.!]*$",
+    re.I,
+)
+_WIN_SNAP_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис|jarvis)?[\s,]*(?:пожалуйста\s+)?(?:прижми|сдвинь|поставь|привяжи|разместить|размести|пристыкуй|подвинь)\s+"
+    r"(?P<w>.*?)\s*(?:(?:к|на)\s+)?(?P<s>влево|вправо|налево|направо|слева|справа|лев\w+|прав\w+|вверх|вниз|по\s+центру)(?:\s+(?:половин\w+|сторон\w+|кра\w+))?[\s?.!]*$",
+    re.I,
+)
+_WIN_LIST_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис|jarvis)?[\s,]*(?:какие\s+(?:у\s+меня\s+)?мониторы|сколько\s+(?:у\s+меня\s+)?мониторов|покажи\s+мониторы|"
+    r"какие\s+(?:у\s+меня\s+)?экраны)[\s?.!]*$",
+    re.I,
+)
+_WIN_WORD_FILLER = re.compile(r"\b(?:окно|окна|это|эту|текущее|текущую|активное|активную|мое|моё|мой|программу|приложение|пожалуйста)\b")
+_MONITOR_WORDS = {"первый": 1, "первом": 1, "один": 1, "второй": 2, "втором": 2, "два": 2, "третий": 3, "три": 3}
+_SIDE_CANON = (("лев", "left"), ("слева", "left"), ("влево", "left"), ("налево", "left"), ("прав", "right"), ("справа", "right"),
+               ("вправо", "right"), ("направо", "right"), ("верх", "top"), ("низ", "bottom"))
+
+
+def _window_name(raw: str) -> str:
+    return re.sub(r"\s+", " ", _WIN_WORD_FILLER.sub(" ", raw.lower())).strip()
+
+
+def _match_window_control(original: str) -> LocalActionPlan | None:
+    """Window moves between monitors, snapping and the monitor list (fork addition)."""
+
+    def plan(args: dict[str, object]) -> LocalActionPlan:
+        return LocalActionPlan(mode=LocalActionMode.DIRECT, tool_calls=(LocalToolCall(name="window_control", args=args),))
+
+    if _WIN_LIST_RE.match(original):
+        return plan({"action": "list_monitors"})
+    m = _WIN_MOVE_RE.match(original)
+    if m is not None:
+        tail = m.group("tail").lower()
+        monitor = "next"
+        digits = re.search(r"\d+", tail)
+        if digits:
+            monitor = digits.group()
+        else:
+            for word, number in _MONITOR_WORDS.items():
+                if re.search(rf"\b{word}\b", tail):
+                    monitor = str(number)
+                    break
+            if monitor == "next" and re.search(r"основн|главн", tail):
+                monitor = "primary"
+        return plan({"action": "move_to_monitor", "window": _window_name(m.group("w")), "monitor": monitor})
+    m = _WIN_SNAP_RE.match(original)
+    if m is not None:
+        side_raw = m.group("s").lower()
+        if side_raw.startswith("по"):
+            return plan({"action": "center", "window": _window_name(m.group("w"))})
+        side = next((canon for key, canon in _SIDE_CANON if key in side_raw), "left")
+        return plan({"action": "snap", "window": _window_name(m.group("w")), "side": side})
+    return None
+
+
+_PRE = r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис|jarvis)?[\s,]*(?:пожалуйста\s+)?"
+_BR_SEARCH_RE = re.compile(
+    _PRE + r"(?:(?:найди|поищи|ищи|покажи)\s+(?:в\s+|на\s+)(?P<e>яндексе|гугле|google|ютубе|ютюбе|youtube)\s+(?P<q>.+?)"
+    r"|(?:загугли|погугли|гугли)\s+(?P<q2>.+?)|(?:яндексни|найди\s+в\s+яндексе)\s+(?P<q3>.+?))[\s?.!]*$", re.I,
+)
+_BR_OPEN_SITE_RE = re.compile(
+    _PRE + r"(?:открой|открыть|зайди\s+на|перейди\s+на|запусти)\s+(?:сайт\s+)?(?P<s>[\w .\-]{2,40}?)[\s?.!]*$", re.I,
+)
+_BR_TAB_RE = tuple(
+    (re.compile(_PRE + body + r"[\s?.!]*$", re.I), action)
+    for body, action in (
+        (r"(?:открой|создай|новая|нужна)\s+(?:новую\s+)?вкладк\w*|новая\s+вкладка", "new_tab"),
+        (r"закрой\s+(?:эту\s+|текущую\s+)?вкладк\w*", "close_tab"),
+        (r"(?:верни|открой\s+снова|восстанови)\s+(?:закрытую\s+)?вкладк\w*", "reopen_tab"),
+        (r"(?:следующая|следующую|вперёд|вперед)\s+вкладк\w*|переключи\s+вкладк\w*|на\s+следующую\s+вкладку", "next_tab"),
+        (r"(?:предыдущая|предыдущую|прошлая|прошлую)\s+вкладк\w*|на\s+предыдущую\s+вкладку", "prev_tab"),
+        (r"обнови\s+(?:эту\s+)?страницу|перезагрузи\s+страницу|обнови\s+вкладку", "reload"),
+        (r"(?:вернись|назад)\s+(?:на\s+)?(?:предыдущую\s+)?страниц\w*|страница\s+назад", "back"),
+        (r"открой\s+(?:новое\s+)?окно\s+браузера|новое\s+окно\s+браузера", "new_window"),
+        (r"(?:открой\s+)?(?:режим\s+)?инкогнито|приватное\s+окно", "incognito"),
+        (r"(?:открой\s+)?историю\s+браузера", "history"),
+        (r"(?:открой\s+)?загрузки\s+браузера", "downloads"),
+    )
+)
+_WIN_NAMED_RE = re.compile(
+    _PRE + r"(?P<v>сверни|разверни|переключись\s+на|перейди\s+в|перейди\s+на|покажи\s+окно|вернись\s+в|вернись\s+на)\s+"
+    r"(?:окно\s+|программу\s+|приложение\s+)?(?P<w>[\w .\-]{2,40}?)[\s?.!]*$", re.I,
+)
+_WIN_NAMED_SKIP = re.compile(r"^(?:все|всё|это|этот|текущее|активное|окно|окна|экран|рабочий стол)(?:\s+окна)?$")
+_WIN_TILE_RE = re.compile(
+    _PRE + r"(?:расположи|размести|разложи|выстрой)\s+(?:все\s+)?окна\s*(?:рядом|плиткой|сеткой|друг\s+с\s+другом)?"
+    r"(?:\s+(?P<n>два|три|четыре|\d))?[\s?.!]*$|" + _PRE + r"окна\s+(?:рядом|плиткой|сеткой)[\s?.!]*$", re.I,
+)
+_WIN_LAYOUT_SAVE_RE = re.compile(
+    _PRE + r"запомни\s+(?:расположение|раскладку)\s+окон(?:\s+как)?\s*(?P<n>[\w .\-]{0,30}?)[\s?.!]*$", re.I,
+)
+_WIN_LAYOUT_LOAD_RE = re.compile(
+    _PRE + r"(?:верни|восстанови|включи)\s+(?:расположение|раскладку)\s+окон\s*(?P<n>[\w .\-]{0,30}?)[\s?.!]*$", re.I,
+)
+_MEM_REMEMBER_RE = re.compile(_PRE + r"(?:запомни|запиши\s+в\s+память|запомни\s+пожалуйста)(?:\s*,)?\s+(?:что\s+)?(?P<t>.{4,300}?)[\s?.!]*$", re.I)
+_MEM_RECALL_RE = re.compile(
+    _PRE + r"(?:что\s+ты\s+(?:помнишь|знаешь)\s+(?:про|о|об|обо)|вспомни(?:\s+(?:про|о|об))?|что\s+я\s+(?:тебе\s+)?(?:говорил|рассказывал)\s+(?:про|о|об))\s+"
+    r"(?P<q>.{2,100}?)[\s?.!]*$", re.I,
+)
+_MEM_HISTORY_RE = re.compile(
+    _PRE + r"что\s+(?:я\s+(?:тебя\s+)?(?:просил|делал|говорил|командовал)|мы\s+(?:делали|сделали)|ты\s+(?:сделал|делал))\s*"
+    r"(?P<d>сегодня|вчера|позавчера)?[\s?.!]*$", re.I,
+)
+_SCENE_RE = re.compile(
+    _PRE + r"(?:включи|запусти|активируй|давай|поставь|врубай)\s+(?:(?:режим|сценарий)\s+(?P<a>[\w\- ]{2,30}?)|(?P<b>[\w\-]{2,30}?)\s+(?:режим|сценарий))[\s?.!]*$", re.I,
+)
+_WORD_NUM = {"два": 2, "три": 3, "четыре": 4}
+
+
+_COURSE_STATUS_RE = re.compile(
+    _PRE + r"(?:(?:какой\s+)?статус\s+(?:курса|обучения|изучения)|как\s+(?:идёт|идет|продвигается)\s+(?:курс|обучение|изучение)|что\s+ты\s+(?:сейчас\s+)?изучаешь|что\s+ты\s+(?:уже\s+)?изучил|сколько\s+(?:ты\s+)?(?:уже\s+)?изучил)[\s?.!]*$",
+    re.I,
+)
+_COURSE_PAUSE_RE = re.compile(
+    _PRE + r"(?:останови|приостанови|поставь\s+на\s+паузу)\s+(?:курс|обучение)|пауза\s+(?:курса|обучения)[\s?.!]*$", re.I,
+)
+
+
+_APP_STUDY_ALL_RE = re.compile(
+    _PRE + r"(?:изучи|изучай|освой|научись\s+пользоваться)\s+(?:все\s+|всеми\s+|всё\s+)?(?:программы|программами|приложения|приложениями|"
+    r"все\s+программы|что\s+(?:ты\s+)?видишь|всем,?\s+что\s+(?:ты\s+)?видишь|компьютером)[\s!.?]*$", re.I,
+)
+_APP_STUDY_RE = re.compile(
+    _PRE + r"(?:изучи|изучай|освой|научись\s+пользоваться|научись\s+работать\s+(?:в|с))\s+(?:программой\s+|программу\s+|приложением\s+|приложение\s+)?"
+    r"(?P<n>[\w .\-+]{2,40}?)[\s!.?]*$", re.I,
+)
+_APP_INSPECT_RE = re.compile(
+    _PRE + r"(?:что\s+есть\s+в|покажи\s+(?:кнопки|элементы|меню)\s+(?:в\s+)?|какие\s+(?:кнопки|элементы)\s+(?:есть\s+)?в)\s*(?:программе\s+)?(?P<p>[\w .\-+]{2,40}?)[\s?.!]*$", re.I,
+)
+_APP_CLICK_RE = re.compile(
+    _PRE + r"(?:нажми|кликни|клацни)\s+(?:на\s+|по\s+)?(?:кнопку\s+)?(?P<e>[^,]{1,60}?)\s+(?:в|во|на)\s+(?P<p>[\w .\-+]{2,40}?)[\s?.!]*$", re.I,
+)
+_APP_TYPE_RE = re.compile(
+    _PRE + r"(?:введи|напиши|набери|впиши)\s+(?P<t>.{1,200}?)\s+(?:в|во)\s+(?P<p>[\w .\-+]{2,40}?)[\s?.!]*$", re.I,
+)
+_APP_HOTKEY_RE = re.compile(
+    _PRE + r"нажми\s+(?P<k>(?:ctrl|alt|shift|win|control|f\d{1,2})(?:\s*\+\s*[\w+\-,./]+)+)(?:\s+(?:в|во)\s+(?P<p>[\w .\-+]{2,40}?))?[\s?.!]*$", re.I,
+)
+_NOT_PROGRAM = re.compile(r"^(?:файл\w*|курс\w*|материал\w*|документ\w*|навык\w*|знани\w+|папк\w+|сайт\w*)(?:\s|$)", re.I)
+
+
+def _match_program_use(original: str) -> LocalActionPlan | None:
+    """Studying programs and operating any program through its interface (fork addition)."""
+
+    def plan(tool: str, args: dict[str, object]) -> LocalActionPlan:
+        return LocalActionPlan(mode=LocalActionMode.DIRECT, tool_calls=(LocalToolCall(name=tool, args=args),))
+
+    if _APP_STUDY_ALL_RE.match(original):
+        return plan("study_app", {"action": "study_next"})
+    m = _APP_HOTKEY_RE.match(original)
+    if m is not None:
+        keys = re.sub(r"\s+", "", m.group("k"))
+        args: dict[str, object] = {"action": "hotkey", "keys": keys}
+        if m.group("p"):
+            args["program"] = _window_name(m.group("p"))
+        return plan("app_control", args)
+    m = _APP_INSPECT_RE.match(original)
+    if m is not None:
+        return plan("app_control", {"action": "inspect", "program": _window_name(m.group("p"))})
+    m = _APP_TYPE_RE.match(original)
+    if m is not None:
+        return plan("app_control", {"action": "type", "program": _window_name(m.group("p")), "text": m.group("t").strip(" \"'")})
+    m = _APP_CLICK_RE.match(original)
+    if m is not None and not _NOT_PROGRAM.match(m.group("e")):
+        return plan("app_control", {"action": "click", "program": _window_name(m.group("p")), "element": m.group("e").strip(" \"'")})
+    m = _APP_STUDY_RE.match(original)
+    if m is not None and not _NOT_PROGRAM.match(m.group("n")) and not re.match(
+            r"^(?:computer\s+science|компьютер\s+саенс|информатик\w*)$", m.group("n").strip(), re.I):
+        return plan("study_app", {"action": "study", "program": _window_name(m.group("n"))})
+    return None
+
+
+def _match_new_skills(original: str) -> LocalActionPlan | None:
+    """Browser, named windows, layouts, memory and scenes (fork addition 2026-11-14)."""
+
+    def plan(tool: str, args: dict[str, object]) -> LocalActionPlan:
+        return LocalActionPlan(mode=LocalActionMode.DIRECT, tool_calls=(LocalToolCall(name=tool, args=args),))
+
+    if _COURSE_RUN_RE.match(original):
+        return plan("study_course", {"action": "study"})
+    if _INBOX_STUDY_RE.match(original):
+        return plan("study_course", {"action": "ingest"})
+    m = _SKILL_CREATE_RE.match(original)
+    if m is not None:
+        topic = (m.group("t") or m.group("t2") or "").strip(" \"'")
+        return plan("skill_from_knowledge", {"action": "create", "topic": topic} if topic else {"action": "auto"})
+    m = _SKILL_ACTIVATE_RE.match(original)
+    if m is not None:
+        return plan("skill_from_knowledge", {"action": "activate", "name": m.group("n").strip(" \"'")})
+    m = _FILE_STUDY_RE.match(original)
+    if m is not None and not re.match(r"^(?:computer\s+science|компьютер\s+саенс|информатик\w*)$", m.group("n").strip(), re.I):
+        return plan("study_course", {"action": "study", "path": m.group("n").strip(" \"'")})
+    if _COURSE_STATUS_RE.match(original):
+        return plan("study_course", {"action": "status"})
+    if _COURSE_PAUSE_RE.match(original):
+        return plan("study_course", {"action": "pause"})
+    m = _MEM_HISTORY_RE.match(original)
+    if m is not None:
+        back = {"вчера": 1, "позавчера": 2}.get((m.group("d") or "").lower(), 0)
+        return plan("memory_notes", {"action": "history", "days_back": back})
+    m = _MEM_RECALL_RE.match(original)
+    if m is not None:
+        return plan("memory_notes", {"action": "recall", "query": m.group("q")})
+    m = _WIN_LAYOUT_SAVE_RE.match(original)
+    if m is not None:
+        return plan("window_control", {"action": "save_layout", "name": (m.group("n") or "основная").strip() or "основная"})
+    m = _WIN_LAYOUT_LOAD_RE.match(original)
+    if m is not None:
+        return plan("window_control", {"action": "load_layout", "name": (m.group("n") or "основная").strip() or "основная"})
+    m = _MEM_REMEMBER_RE.match(original)
+    if m is not None:
+        return plan("memory_notes", {"action": "remember", "text": m.group("t").strip()})
+    m = _SCENE_RE.match(original)
+    if m is not None:
+        from jarvis.plugins.tool import scenes  # noqa: PLC0415
+
+        spoken = (m.group("a") or m.group("b") or "").strip()
+        if scenes.resolve(spoken) is not None:
+            return plan("scenes", {"action": "run", "name": spoken})
+    for pattern, action in _BR_TAB_RE:
+        if pattern.match(original):
+            return plan("browser_control", {"action": action})
+    m = _BR_SEARCH_RE.match(original)
+    if m is not None:
+        engine = (m.group("e") or "").lower()
+        engine = "youtube" if engine.startswith(("ютуб", "ютюб", "youtube")) else "google" if engine in {"гугле", "google"} else "yandex"
+        if m.group("q2"):
+            engine = "google"
+        query = (m.group("q") or m.group("q2") or m.group("q3") or "").strip()
+        return plan("browser_control", {"action": "search", "query": query, "engine": engine})
+    m = _WIN_TILE_RE.match(original)
+    if m is not None:
+        n = (m.groupdict().get("n") or "2").lower()
+        return plan("window_control", {"action": "tile", "count": _WORD_NUM.get(n, int(n) if n.isdigit() else 2)})
+    m = _WIN_NAMED_RE.match(original)
+    if m is not None:
+        name = _window_name(m.group("w"))
+        if name and not _WIN_NAMED_SKIP.match(name):
+            verb = m.group("v").lower()
+            action = "minimize" if verb == "сверни" else "maximize" if verb == "разверни" else "focus"
+            return plan("window_control", {"action": action, "window": name})
+    m = _BR_OPEN_SITE_RE.match(original)
+    if m is not None:
+        from jarvis.plugins.tool import browser_control  # noqa: PLC0415
+
+        site = m.group("s").strip()
+        if browser_control.site_url(site) is not None and "." in site or site.lower().replace("ё", "е") in browser_control.SITES:
+            return plan("browser_control", {"action": "open_url", "site": site})
+    return None
+
+
+_SKILL_CREATE_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:пожалуйста\s+)?(?:создай|сделай|оформи|собери|напиши)\s+"
+    r"(?:(?:себе|мне)\s+)?(?:навык|навыки|скилл|скиллы)\s+(?:из|на\s+основе|по)\s+"
+    r"(?:(?:изученн\w+|знани\w+|курс\w*|файл\w*|материал\w*|выученн\w+)\s*)(?:(?:про|по|о|об|обо)\s+)?(?P<t>.*?)[\s!.?]*$"
+    r"|^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:оформи|преврати)\s+(?:знания|изученное|курс)\s+(?:(?:про|по|о|об)\s+)?(?P<t2>.*?)\s+в\s+(?:навык|скилл)[\s!.?]*$",
+    re.I,
+)
+_SKILL_ACTIVATE_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:пожалуйста\s+)?(?:включи|активируй|запусти|подключи)\s+(?:навык|скилл)\s+(?P<n>.{2,80}?)[\s!.?]*$",
+    re.I,
+)
+_FILE_STUDY_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:пожалуйста\s+)?(?:изучи|изучай|выучи|прочитай|освой|разбери|загрузи)\s+"
+    r"(?:мой\s+|мои\s+)?(?:файл|файлы|курс|курсы|материал|материалы|документ|документы)\s+(?P<n>.{2,120}?)[\s!.?]*$", re.I,
+)
+_INBOX_STUDY_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:пожалуйста\s+)?(?:изучи|изучай|загрузи|прочитай)\s+"
+    r"(?:(?:всё|все)\s+)?(?:(?:новые|мои|загруженные)\s+)?(?:(?:папку|файлы|курсы|материалы)(?:\s+(?:с\s+курсами|курсов|загрузок))?|что\s+я\s+(?:загрузил|положил))[\s!.?]*$",
+    re.I,
+)
+_COURSE_RUN_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:пожалуйста\s+)?(?:начни|начинай|запусти|продолжи|продолжай|возобнови|давай|изучи|изучай)\s+"
+    r"(?:следующий\s+блок|следующий\s+урок|(?:курс|обучение)(?:\s+(?:по\s+)?(?:computer\s+science|компьютер\s+саенс|информатике|информатика|computer-science))?|"
+    r"computer\s+science|компьютер\s+саенс)[\s!.?]*$", re.I,
+)
+_STOP_STUDY_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:стоп|стой|остановись|хватит|прекрати|довольно|достаточно|"
+    r"останови(?:\s+(?:обучение|изучение|курс|учёбу|учебу))?|стоп\s+(?:обучение|изучение|курс))[\s!.?]*$", re.I,
+)
+_CONTINUE_WORD_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:давай\s+)?(?:дальше|продолжай|продолжи|продолжить|вперед|вперёд|да|ага|"
+    r"погнали|поехали|играй|следующий|следующую|следующий\s+блок|далее)[\s!.?]*$", re.I,
+)
+_OPEN_ANY_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис|jarvis)?[\s,]*(?:пожалуйста\s+)?(?:открой|открыть|запусти|запустить|стартани|включи|запускай|вруби)\s+"
+    r"(?:мне\s+)?(?:программу\s+|приложение\s+|игру\s+)?(?P<app>[^,.!?]{2,40}?)(?:\s+пожалуйста)?[\s?.!]*$",
+    re.I,
+)
+_OPEN_ANY_STOP = re.compile(r"\b(?:и|а|потом|затем|после|then|and|в\s+котором|там|нём|нем|ней|файл|папк\w*|сайт|ссылк\w*|страниц\w*)\b", re.I)
+
+
+def _match_open_from_catalog(original: str) -> LocalActionPlan | None:
+    """"открой <программа>" for ANY program in the PC catalog (fork addition)."""
+    m = _OPEN_ANY_RE.match(original)
+    if m is None:
+        return None
+    name = m.group("app").strip()
+    if not name or _OPEN_ANY_STOP.search(name):
+        return None
+    from jarvis.plugins.tool import app_catalog  # noqa: PLC0415
+
+    if app_catalog.lookup(name) is None:
+        canonical = app_catalog.spoken_to_canonical(name)
+        if canonical == name:
+            return None
+    return LocalActionPlan(
+        mode=LocalActionMode.DIRECT,
+        tool_calls=(LocalToolCall(name="open_app", args={"app_name": name}),),
+    )
+
+
+# Fork addition: the wake word (and its common mishearings) can sit anywhere in
+# an utterance - the pipeline sometimes glues the previous, unanswered phrase in
+# front ("включи музыку джарвис следующий трек"). The LAST command wins.
+_WAKE_TOKEN_RE = re.compile(
+    r"(?<![\w])(?:джа?р[ае]?в[иы]?[сзш]\w*|джар[еи]с|жар[ао]?в[иы]?[сз]|жарвис|дарвис|чарвис|ярвис|джервис|джарви|jarvis|jarvys|hey\s+jarvis)(?![\w])",
+    re.I,
+)
+
+
+def _drop_wake_tokens(text: str) -> str:
+    """Remove wake-word tokens; keep only what follows the last one if non-empty."""
+    parts = _WAKE_TOKEN_RE.split(text)
+    if len(parts) == 1:
+        return text
+    tail = parts[-1].strip(" ,.!?;:-")
+    if tail:
+        return tail
+    head = " ".join(p.strip(" ,.!?;:-") for p in parts[:-1] if p.strip(" ,.!?;:-"))
+    return head
+
+
+
+
 def match_local_action(
     text: str,
     lang: Literal["de", "en"] = "de",
@@ -1518,9 +1870,27 @@ def match_local_action(
         believes (GT-16).  Empty means "caller knows of no tools" and leaves
         the historical registry-only behaviour untouched.
     """
-    original = text.strip()
+    original = _drop_wake_tokens(text.strip())
     if not original:
         return None
+    if _STOP_STUDY_RE.match(original):
+        from jarvis.plugins.tool import study_runner  # noqa: PLC0415
+
+        if study_runner.is_running():
+            return LocalActionPlan(
+                mode=LocalActionMode.DIRECT,
+                tool_calls=(LocalToolCall(name="study_course", args={"action": "stop"}),),
+            )
+    if _CONTINUE_WORD_RE.match(original):
+        from jarvis.plugins.tool import study_course  # noqa: PLC0415
+
+        target = study_course.awaiting_target()
+        if target is not None:
+            # a study asked "continue?": this answer continues it (not Spotify)
+            return LocalActionPlan(
+                mode=LocalActionMode.DIRECT,
+                tool_calls=(LocalToolCall(name=target[0], args=dict(target[1])),),
+            )
 
     normalized = _normalize(original)
 
@@ -1591,6 +1961,18 @@ def match_local_action(
     apps_plan = _match_apps(normalized, original)
     if apps_plan is not None:
         return apps_plan
+    window_plan = _match_window_control(original)
+    if window_plan is not None:
+        return window_plan
+    skills_plan = _match_new_skills(original)
+    if skills_plan is not None:
+        return skills_plan
+    use_plan = _match_program_use(original)
+    if use_plan is not None:
+        return use_plan
+    catalog_plan = _match_open_from_catalog(original)
+    if catalog_plan is not None:
+        return catalog_plan
     scripted = _match_scripted_local_plan(normalized)
     if scripted is not None:
         return scripted

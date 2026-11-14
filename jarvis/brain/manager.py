@@ -531,6 +531,13 @@ def get_tier_default_model(tier: str, provider: str) -> str | None:
     return TIER_DEFAULTS_BY_PROVIDER.get(tier, {}).get(provider)
 
 
+_MEMORY_CUE_RE = re.compile(
+    r"^(?:(?:hey|хей|эй)\s+)?(?:джарвис[\s,]+)?(?:научись|выучи|изучи|разузнай|узнай\s+и\s+запиши|запомни|запиши|"
+    r"что\s+ты\s+(?:помнишь|знаешь)|вспомни)(?![\w])",
+    re.I,
+)
+
+
 def _coerce_main_brain_provider(provider: str | None, *fallbacks: str | None) -> str:
     """Return a main-brain-capable provider.
 
@@ -5705,6 +5712,10 @@ class BrainManager:
         self._skill_match_band = "none"
         self._skill_match_class = ""
         self._skill_meta_turn = ""
+        # Fork addition: "научись/запомни/запиши/вспомни ..." is a request for the memory tools
+        # even when it names a service ("... про Spotify"); a connector skill must not capture it.
+        if _MEMORY_CUE_RE.match((user_text or "").strip()):
+            return None
         try:
             from jarvis.skills import guards, match_eval, match_log
             from jarvis.skills.autofire_policy import classify, may_capture
@@ -9046,6 +9057,12 @@ class BrainManager:
             override is not None,
             tid,
         )
+        try:  # fork: journal of voice/chat commands ("что я просил вчера")
+            from jarvis.memory import command_history  # noqa: PLC0415
+
+            command_history.record(user_text, [c.name for c in plan.tool_calls])
+        except Exception:  # noqa: BLE001
+            pass
         if override is not None and plan.mode != LocalActionMode.DIRECT:
             return None
         if plan.mode == LocalActionMode.UNSUPPORTED:
@@ -13771,6 +13788,14 @@ _LOCAL_TOOL_TIMEOUTS_S: dict[str, float] = {
     "happ_vpn": 150.0,
     "steam_control": 120.0,
     "spotify_control": 45.0,
+    "app_catalog": 90.0,
+    "window_control": 20.0,
+    "browser_control": 20.0,
+    "study_course": 520.0,
+    "skill_from_knowledge": 420.0,
+    "app_control": 90.0,
+    "study_app": 600.0,
+    "scenes": 150.0,
     "list_apps": 60.0,
     "file_ops": 45.0,
     "get_weather": 25.0,
@@ -13790,6 +13815,10 @@ _PINNED_TOOL_NAMES = frozenset({
     "set-timer", "get-weather", "get-rates",
     "spotify_control", "steam_control", "happ_vpn",
     "spotify-control", "steam-control", "happ-vpn",
+    "window_control", "app_catalog", "window-control", "app-catalog",
+    "browser_control", "memory_notes", "scenes", "browser-control", "memory-notes",
+    "study_course", "study-course", "skill_from_knowledge", "skill-from-knowledge",
+    "app_control", "app-control", "study_app", "study-app",
 })
 
 #: Chars per token for the size estimate. Deliberately low: tool schemas are

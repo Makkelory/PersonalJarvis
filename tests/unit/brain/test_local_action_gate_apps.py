@@ -6,6 +6,12 @@ import pytest
 
 from jarvis.brain.local_action_gate import match_local_action
 
+
+@pytest.fixture(autouse=True)
+def _no_waiting_course(tmp_path, monkeypatch) -> None:
+    """The gate reads data/courses.json of the working folder: run against an empty one."""
+    monkeypatch.chdir(tmp_path)
+
 _LIVE = ("open_app", "spotify_control", "steam_control", "happ_vpn", "pc_control", "close_app")
 
 
@@ -14,7 +20,7 @@ _LIVE = ("open_app", "spotify_control", "steam_control", "happ_vpn", "pc_control
     [
         ("следующий трек", "spotify_control", {"action": "next"}),
         ("предыдущий трек", "spotify_control", {"action": "previous"}),
-        ("пауза", "spotify_control", {"action": "play_pause"}),
+        ("пауза", "spotify_control", {"action": "pause"}),
         ("что сейчас играет", "spotify_control", {"action": "now_playing"}),
         ("включи случайный трек", "spotify_control", {"action": "random_track"}),
         ("включи перемешивание", "spotify_control", {"action": "shuffle_on"}),
@@ -128,3 +134,63 @@ def test_free_word_steam_status_ignores_questions_and_other_talk(text: str) -> N
     plan = match_local_action(text, live_tool_names=_LIVE)
 
     assert plan is None or plan.tool_calls[0].name != "steam_control"
+
+
+@pytest.mark.parametrize("phrase", ["открой стим", "Джарвис, запусти стим", "включи steam", "открой игру в стиме"])
+def test_opening_steam_without_a_game_just_opens_the_client(phrase: str) -> None:
+    plan = match_local_action(phrase)
+
+    assert plan is not None
+    assert [(c.name, c.args) for c in plan.tool_calls] == [("open_app", {"app_name": "steam"})]
+
+
+@pytest.mark.parametrize(
+    "phrase", ["открой игру Dota 2 в стиме", "открой в стиме Dota 2", "открой стим игру Dota 2", "запусти Dota 2 в стиме"],
+)
+def test_a_named_steam_game_is_launched(phrase: str) -> None:
+    plan = match_local_action(phrase)
+
+    assert plan is not None
+    call = plan.tool_calls[0]
+    assert call.name == "steam_control"
+    assert call.args == {"action": "run", "game": "Dota 2"}
+
+
+@pytest.mark.parametrize("phrase,action", [
+    ("включи музыку джарвис следующий трек", "next"), ("дальше", "next"), ("джарвис стоп", "pause"),
+    ("включи музыку", "play"), ("пауза", "pause"), ("назад", "previous"), ("джарес включи музыку", "play"),
+])
+def test_media_phrases_map_to_explicit_spotify_actions(phrase: str, action: str) -> None:
+    plan = match_local_action(phrase)
+
+    assert plan is not None
+    assert plan.tool_calls[0].name == "spotify_control"
+    assert plan.tool_calls[0].args == {"action": action}
+
+
+@pytest.mark.parametrize("phrase,args", [
+    ("перенеси окно на второй монитор", {"action": "move_to_monitor", "window": "", "monitor": "2"}),
+    ("Джарвис перемести браузер на монитор 1", {"action": "move_to_monitor", "window": "браузер", "monitor": "1"}),
+    ("перемести это окно на другой монитор", {"action": "move_to_monitor", "window": "", "monitor": "next"}),
+    ("прижми окно влево", {"action": "snap", "window": "", "side": "left"}),
+    ("какие у меня мониторы", {"action": "list_monitors"}),
+])
+def test_window_control_phrases(phrase: str, args: dict[str, str]) -> None:
+    plan = match_local_action(phrase)
+
+    assert plan is not None
+    assert plan.tool_calls[0].name == "window_control"
+    assert plan.tool_calls[0].args == args
+
+
+def test_open_any_cataloged_program_by_its_russian_name() -> None:
+    plan = match_local_action("открой дискорд")
+
+    assert plan is not None
+    assert plan.tool_calls[0].name == "open_app"
+    assert plan.tool_calls[0].args == {"app_name": "дискорд"}
+
+
+def test_open_an_unknown_name_falls_through_to_the_brain() -> None:
+    assert match_local_action("открой абракадабру") is None
+    assert match_local_action("открой хром и найди погоду") is None

@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import os
 import time
 from typing import Any
 
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 _IDLE_TITLES = {"spotify", "spotify free", "spotify premium", ""}
 _MEDIA = {"next": 0xB0, "previous": 0xB1, "play_pause": 0xB3}
-_ACTIONS = ["now_playing", "next", "previous", "play_pause", "random_track", "shuffle_on", "shuffle_off",
+_ACTIONS = ["now_playing", "next", "previous", "play", "pause", "play_pause", "random_track", "shuffle_on", "shuffle_off",
             "repeat_on", "repeat_off", "like", "unlike", "radio"]
 
 
@@ -163,6 +164,36 @@ def _find_play_button(page) -> tuple[int, int] | None:
     return x0 + c * cell + 20, y0 + r * cell + 20
 
 
+def _play_or_pause(action: str, win: "ui.Win | None") -> str:
+    """Make Spotify play / pause, reading its state first (the title shows the track while playing)."""
+    if win is None:
+        if action == "pause":
+            return "Spotify не запущен, ставить на паузу нечего."
+        os.startfile("spotify:")  # noqa: S606 - the registered Spotify URI scheme
+        deadline = time.monotonic() + 12
+        while win is None and time.monotonic() < deadline:
+            time.sleep(0.6)
+            win = ui.find_window("Spotify")
+        if win is None:
+            return "Запустил Spotify, но его окно так и не появилось."
+        time.sleep(2.5)
+        win = ui.find_window("Spotify") or win
+        if _track(win.title):
+            return f"Запустил Spotify, играет: {_track(win.title)}."
+    playing = bool(_track(win.title))
+    if action == "play" and playing:
+        return f"Уже играет: {_track(win.title)}."
+    if action == "pause" and not playing:
+        return "Музыка и так на паузе."
+    before = win.title
+    ui.chord(_MEDIA["play_pause"])
+    after = _wait_title_change(before)
+    now_playing = bool(_track(after))
+    if action == "play":
+        return f"Включил: {_track(after)}." if now_playing else "Нажал «играть», но Spotify остался на паузе: в нём нет трека для запуска."
+    return "Поставил на паузу." if not now_playing else f"Нажал паузу, но музыка ещё играет: {_track(after)}."
+
+
 def _do(action: str) -> str:  # noqa: C901 — flat dispatch
     win = ui.find_window("Spotify")
     if action == "now_playing":
@@ -170,6 +201,8 @@ def _do(action: str) -> str:  # noqa: C901 — flat dispatch
             return "Окна Spotify нет (приложение закрыто или свёрнуто в трей)."
         track = _track(win.title)
         return f"Сейчас играет: {track}." if track else "Сейчас ничего не играет (Spotify на паузе)."
+    if action in {"play", "pause"}:
+        return _play_or_pause(action, win)
     if action in _MEDIA:
         before = win.title if win else ""
         ui.chord(_MEDIA[action])

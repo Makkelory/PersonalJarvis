@@ -283,6 +283,7 @@ ROUTER_TOOLS = frozenset({
     "file-ops", "pc-control", "network-status",
     "set-timer", "get-weather", "get-rates", "calculate",
     "spotify-control", "steam-control", "happ-vpn",
+    "window-control", "app-catalog", "browser-control", "memory-notes", "scenes", "study-course", "skill-from-knowledge", "app-control", "study-app",
 })
 
 # Phase 7.3 — self-mod tools are registered directly in the router loader in
@@ -678,6 +679,15 @@ def _load_local_action_tools(
     from jarvis.plugins.tool.happ_vpn import HappVpnTool
     from jarvis.plugins.tool.info_tools import CalculateTool, GetRatesTool, GetWeatherTool
     from jarvis.plugins.tool.spotify_control import SpotifyControlTool
+    from jarvis.plugins.tool.app_catalog import AppCatalogTool, refresh_in_background as _refresh_catalog
+    from jarvis.plugins.tool.window_control import WindowControlTool
+    from jarvis.plugins.tool.browser_control import BrowserControlTool
+    from jarvis.plugins.tool.memory_notes import MemoryNotesTool
+    from jarvis.plugins.tool.study_course import StudyCourseTool
+    from jarvis.plugins.tool.app_control import AppControlTool
+    from jarvis.plugins.tool.app_study import StudyAppTool
+    from jarvis.plugins.tool.skill_from_knowledge import SkillFromKnowledgeTool
+    from jarvis.plugins.tool import scenes as _scenes
     from jarvis.plugins.tool.steam_control import SteamControlTool
     from jarvis.plugins.tool.open_app import OpenAppTool
     from jarvis.plugins.tool.pc_control import NetworkStatusTool, PcControlTool
@@ -688,8 +698,12 @@ def _load_local_action_tools(
 
     # Timers speak through the bus and survive restarts (restores data/timers.json).
     _reminders.bind(bus)
+    _refresh_catalog()  # remembers where every program lives (rescans when stale)
+    from jarvis.memory.wiki.knowledge_map import export_in_background as _export_map
 
-    return {
+    _export_map(getattr(getattr(config, "wiki_integration", None), "vault_root", None) or "wiki/obsidian-vault")
+
+    registry = {
         "open_app": OpenAppTool(),
         # Fork additions: real program listing / closing, volume, PC status.
         "list_apps": ListAppsTool(),
@@ -706,6 +720,15 @@ def _load_local_action_tools(
         "spotify_control": SpotifyControlTool(),
         "steam_control": SteamControlTool(),
         "happ_vpn": HappVpnTool(),
+        "window_control": WindowControlTool(),
+        "app_catalog": AppCatalogTool(),
+        "browser_control": BrowserControlTool(),
+        "memory_notes": MemoryNotesTool(),
+        "study_course": StudyCourseTool(),
+        "app_control": AppControlTool(),
+        "study_app": StudyAppTool(),
+        "skill_from_knowledge": SkillFromKnowledgeTool(),
+        "scenes": _scenes.ScenesTool(),
         "type_text": TypeTextTool(),
         "hotkey": HotkeyTool(),
         "dispatch_to_harness": DispatchToHarnessTool(
@@ -719,6 +742,8 @@ def _load_local_action_tools(
         # on the bus; the orb-side bridge handles the Tk-thread dispatch.
         "reset_orb_position": ResetOrbPositionTool(bus=bus),
     }
+    _scenes.bind(registry)
+    return registry
 
 
 def _build_contact_store() -> Any:
