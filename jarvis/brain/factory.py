@@ -281,6 +281,8 @@ ROUTER_TOOLS = frozenset({
     # call when a phrase misses the deterministic gate.
     "list-apps", "close-app", "set-volume", "system-status",
     "file-ops", "pc-control", "network-status",
+    "set-timer", "get-weather", "get-rates", "calculate",
+    "spotify-control", "steam-control", "happ-vpn",
 })
 
 # Phase 7.3 — self-mod tools are registered directly in the router loader in
@@ -671,13 +673,21 @@ def _load_local_action_tools(
     """Load hidden tools for the deterministic local-action fast path."""
     from jarvis.plugins.tool.dispatch_to_harness import DispatchToHarnessTool
     from jarvis.plugins.tool.hotkey import HotkeyTool
+    from jarvis.plugins.tool import reminders as _reminders
     from jarvis.plugins.tool.file_ops import FileOpsTool
+    from jarvis.plugins.tool.happ_vpn import HappVpnTool
+    from jarvis.plugins.tool.info_tools import CalculateTool, GetRatesTool, GetWeatherTool
+    from jarvis.plugins.tool.spotify_control import SpotifyControlTool
+    from jarvis.plugins.tool.steam_control import SteamControlTool
     from jarvis.plugins.tool.open_app import OpenAppTool
     from jarvis.plugins.tool.pc_control import NetworkStatusTool, PcControlTool
     from jarvis.plugins.tool.reset_orb_position import ResetOrbPositionTool
     from jarvis.plugins.tool.system_apps import CloseAppTool, ListAppsTool
     from jarvis.plugins.tool.system_control import SetVolumeTool, SystemStatusTool
     from jarvis.plugins.tool.type_text import TypeTextTool
+
+    # Timers speak through the bus and survive restarts (restores data/timers.json).
+    _reminders.bind(bus)
 
     return {
         "open_app": OpenAppTool(),
@@ -689,6 +699,13 @@ def _load_local_action_tools(
         "file_ops": FileOpsTool(),
         "pc_control": PcControlTool(),
         "network_status": NetworkStatusTool(),
+        "set_timer": _reminders.SetTimerTool(),
+        "get_weather": GetWeatherTool(),
+        "get_rates": GetRatesTool(),
+        "calculate": CalculateTool(),
+        "spotify_control": SpotifyControlTool(),
+        "steam_control": SteamControlTool(),
+        "happ_vpn": HappVpnTool(),
         "type_text": TypeTextTool(),
         "hotkey": HotkeyTool(),
         "dispatch_to_harness": DispatchToHarnessTool(

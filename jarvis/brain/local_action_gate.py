@@ -877,12 +877,12 @@ _PC_SIMPLE: tuple[tuple[re.Pattern[str], str, dict[str, object]], ...] = tuple(
         (r"разверни\s+(?:это\s+|текущее\s+|активное\s+)?окно(?:\s+на\s+весь\s+экран)?", "pc_control", {"action": "maximize_window"}),
         (r"закрой\s+(?:это\s+|текущее\s+|активное\s+)окно|закрой\s+окно", "pc_control", {"action": "close_window"}),
         (r"пауза|поставь\s+на\s+паузу|продолжи\s+(?:музыку|воспроизведение)|включи\s+паузу",
-         "pc_control", {"action": "play_pause"}),
+         "spotify_control", {"action": "play_pause"}),
         (r"(?:включи|запусти|поставь)\s+(?:снова\s+|опять\s+)?музыку(?:\s+(?:в|на)\s+(?:спотифай|spotify))?"
-         r"|возобнови\s+(?:музыку|воспроизведение)|верни\s+музыку", "pc_control", {"action": "play_pause"}),
+         r"|возобнови\s+(?:музыку|воспроизведение)|верни\s+музыку", "spotify_control", {"action": "play_pause"}),
         (r"следующ\w+\s+(?:трек|песн\w+|композици\w+)|переключи\s+(?:трек|песню)|включи\s+следующ\w+",
-         "pc_control", {"action": "next"}),
-        (r"предыдущ\w+\s+(?:трек|песн\w+|композици\w+)|включи\s+предыдущ\w+", "pc_control", {"action": "previous"}),
+         "spotify_control", {"action": "next"}),
+        (r"предыдущ\w+\s+(?:трек|песн\w+|композици\w+)|включи\s+предыдущ\w+", "spotify_control", {"action": "previous"}),
         (r"который\s+час|сколько\s+(?:сейчас\s+)?времени|какое\s+сегодня\s+число|какая\s+сегодня\s+дата|какой\s+сегодня\s+день",
          "pc_control", {"action": "time"}),
         (r"что\s+(?:сейчас\s+)?в\s+буфере\s+обмена|покажи\s+буфер\s+обмена", "pc_control", {"action": "clipboard_get"}),
@@ -1017,6 +1017,285 @@ def _match_system_control(text: str) -> LocalActionPlan | None:
         app = _CLOSE_ALIASES.get(spoken) or _canonical_app(closing.group("app"))
         if app is not None:
             return plan("close_app", {"name": app})
+    return None
+
+
+# Fork addition (2026-11-14): timers, weather, rates, calculator, notes, latest
+# download and help. ``original`` keeps the user's casing for note/label text.
+_RU_NUM_ATOMS = {
+    "один": 1, "одну": 1, "одна": 1, "два": 2, "две": 2, "три": 3, "четыре": 4, "пять": 5,
+    "шесть": 6, "семь": 7, "восемь": 8, "девять": 9, "десять": 10, "пятнадцать": 15,
+    "двадцать": 20, "тридцать": 30, "сорок": 40, "пятьдесят": 50, "шестьдесят": 60,
+}
+_NUM_TOKEN = r"(?:\d+|(?:" + "|".join(_RU_NUM_ATOMS) + r")(?:\s+(?:" + "|".join(_RU_NUM_ATOMS) + r"))?)"
+_DUR_PART = r"(?:" + _NUM_TOKEN + r"\s*(?:секунд\w*|сек\w*|минут\w*|мин\w*|час\w*)|полчаса|(?:час|минуту|секунду)(?!\w))"
+_DURATION = _DUR_PART + r"(?:\s+(?:и\s+)?" + _DUR_PART + r")*"
+_DUR_PART_RE = re.compile(r"(?P<n>" + _NUM_TOKEN + r")\s*(?P<u>секунд\w*|сек\w*|минут\w*|мин\w*|час\w*)|(?P<half>полчаса)|(?P<one>час|минуту|секунду)(?!\w)")
+_TIMER_SET_RE = re.compile(
+    _WAKE_PREFIX + r"(?:(?:поставь|установи|заведи|запусти|сделай)\s+)?таймер\s+(?:на\s+)?(?P<d>" + _DURATION + r")[\s?.!]*$",
+    re.I,
+)
+_REMIND_IN_RE = re.compile(
+    _WAKE_PREFIX + r"напомни(?:\s+мне)?\s+через\s+(?P<d>" + _DURATION + r")(?:[,\s]+(?P<label>.+?))?[\s?.!]*$",
+    re.I,
+)
+_REMIND_AT_RE = re.compile(
+    _WAKE_PREFIX + r"напомни(?:\s+мне)?\s+в\s+(?P<h>\d{1,2})[:.\s](?P<m>\d{2})(?:[,\s]+(?P<label>.+?))?[\s?.!]*$",
+    re.I,
+)
+_TIMER_LIST_RE = re.compile(
+    _WAKE_PREFIX + r"(?:какие\s+(?:у\s+меня\s+)?(?:таймеры|напоминания)|сколько\s+осталось(?:\s+до\s+таймера)?|покажи\s+таймеры)[\s?.!]*$",
+    re.I,
+)
+_TIMER_CANCEL_RE = re.compile(
+    _WAKE_PREFIX + r"(?:отмени|сбрось|удали)\s+(?:все\s+|мой\s+)?(?:таймер\w*|напоминани\w+)[\s?.!]*$", re.I,
+)
+_WEATHER_RE = re.compile(
+    _WAKE_PREFIX
+    + r"(?:(?:посмотри|покажи|узнай|скажи)\s+(?:мне\s+)?)?(?:(?:в\s+интернете|в\s+сети)\s+)?(?:какая\s+)?(?:сейчас\s+)?погод[ауы]"
+    r"(?:\s+на\s+улице)?(?:\s+(?P<w1>сейчас|сегодня|завтра))?(?:\s+(?:в|во)\s+(?P<city>[\w\- ]{2,30}?))?(?:\s+(?P<w2>сейчас|сегодня|завтра))?[\s?.!]*$",
+    re.I,
+)
+_RATES_RE = re.compile(
+    _WAKE_PREFIX
+    + r"(?:(?:какой|скажи|покажи)\s+(?:мне\s+)?)?(?:сегодняшний\s+)?(?:курс\s+(?P<cur>доллара|доллар|евро|юаня|юань|фунта|тенге|лиры|иены)|курс\s+валют"
+    r"|сколько\s+(?:сейчас\s+)?стоит\s+(?P<cur2>доллар|евро|юань))(?:\s+(?:сегодня|сейчас|к\s+рублю))?[\s?.!]*$",
+    re.I,
+)
+_CALC_RE = re.compile(_WAKE_PREFIX + r"(?:посчитай|сколько\s+будет|вычисли|реши|calc)\s+(?P<e>.+?)[\s?.!]*$", re.I)
+_NOTE_ADD_RE = re.compile(
+    _WAKE_PREFIX + r"(?:запиши|добавь|сохрани|запомни)\s+(?:мне\s+)?(?:в\s+)?(?:заметк\w+|заметки)[\s:,\-]*(?P<t>.+?)[\s]*$", re.I,
+)
+_NOTE_READ_RE = re.compile(_WAKE_PREFIX + r"(?:прочитай|покажи|открой)\s+(?:мои\s+)?заметки[\s?.!]*$", re.I)
+_LATEST_OPEN_RE = re.compile(
+    _WAKE_PREFIX + r"открой\s+последни\w+\s+(?:скачанн\w+\s+)?файл[\s?.!]*$", re.I,
+)
+_LATEST_SHOW_RE = re.compile(
+    _WAKE_PREFIX + r"(?:что\s+я\s+(?:последним\s+)?скачал(?:\s+последним)?|какой\s+последний\s+скачанн\w+\s+файл|последний\s+скачанный\s+файл)[\s?.!]*$",
+    re.I,
+)
+_HELP_RE = re.compile(
+    _WAKE_PREFIX + r"(?:что\s+ты\s+умеешь|что\s+ты\s+можешь|помощь|справка|список\s+команд|help)[\s?.!]*$", re.I,
+)
+
+
+def _num_value(token: str) -> int:
+    token = token.strip()
+    if token.isdigit():
+        return int(token)
+    return sum(_RU_NUM_ATOMS.get(word, 0) for word in token.split())
+
+
+def _duration_seconds(text: str) -> float:
+    total = 0.0
+    for m in _DUR_PART_RE.finditer(text):
+        if m.group("half"):
+            total += 1800.0
+            continue
+        if m.group("one"):
+            total += {"час": 3600.0, "минуту": 60.0, "секунду": 1.0}[m.group("one")]
+            continue
+        n = _num_value(m.group("n"))
+        unit = m.group("u")
+        total += n * (3600.0 if unit.startswith("час") else 60.0 if unit.startswith("мин") else 1.0)
+    return total
+
+
+def _clean_label(raw: str | None) -> str:
+    label = (raw or "").strip()
+    label = re.sub(r"^(?:что|чтобы|о\s+том,?\s+что|про|насчёт|насчет)\s+", "", label, flags=re.I)
+    return label[:120]
+
+
+def _match_extras(text: str, original: str) -> LocalActionPlan | None:
+    """Plans for timers, weather, rates, calculator, notes, latest file and help."""
+
+    def plan(tool: str, args: dict[str, object]) -> LocalActionPlan:
+        return LocalActionPlan(
+            mode=LocalActionMode.DIRECT,
+            tool_calls=(LocalToolCall(name=tool, args=args),),
+        )
+
+    found = _TIMER_SET_RE.match(text)
+    if found is not None:
+        seconds = _duration_seconds(found.group("d"))
+        return plan("set_timer", {"action": "set", "seconds": seconds}) if seconds >= 1 else None
+    orig = _REMIND_IN_RE.match(original)
+    if orig is not None:
+        seconds = _duration_seconds(_normalize(orig.group("d")))
+        if seconds >= 1:
+            return plan("set_timer", {"action": "set", "seconds": seconds, "label": _clean_label(orig.group("label"))})
+        return None
+    orig = _REMIND_AT_RE.match(original)
+    if orig is not None:
+        return plan("set_timer", {"action": "set", "at": f"{int(orig.group('h')):02d}:{orig.group('m')}",
+                                  "label": _clean_label(orig.group("label"))})
+    if _TIMER_LIST_RE.match(text):
+        return plan("set_timer", {"action": "list"})
+    if _TIMER_CANCEL_RE.match(text):
+        return plan("set_timer", {"action": "cancel"})
+    weather = _WEATHER_RE.match(text)
+    if weather is not None:
+        when = weather.group("w1") or weather.group("w2") or "сегодня"
+        args: dict[str, object] = {"day": "tomorrow" if when == "завтра" else "today"}
+        city = (weather.group("city") or "").strip()
+        if city:
+            args["city"] = city
+        return plan("get_weather", args)
+    rates = _RATES_RE.match(text)
+    if rates is not None:
+        cur = rates.group("cur") or rates.group("cur2") or ""
+        return plan("get_rates", {"currency": cur})
+    note = _NOTE_ADD_RE.match(original)
+    if note is not None and note.group("t").strip():
+        from datetime import datetime
+
+        stamp = datetime.now().strftime("%d.%m.%Y %H:%M")
+        notes_path = "документы" + chr(92) + "Jarvis" + chr(92) + "Заметки.txt"
+        return plan("file_ops", {"action": "write", "path": notes_path,
+                                 "text": f"[{stamp}] {note.group('t').strip()}" + chr(10), "append": True})
+    if _NOTE_READ_RE.match(text):
+        return plan("file_ops", {"action": "read", "path": "документы" + chr(92) + "Jarvis" + chr(92) + "Заметки.txt"})
+    if _LATEST_OPEN_RE.match(text):
+        return plan("file_ops", {"action": "latest", "path": "загрузки", "open": True})
+    if _LATEST_SHOW_RE.match(text):
+        return plan("file_ops", {"action": "latest", "path": "загрузки"})
+    if _HELP_RE.match(text):
+        return plan("pc_control", {"action": "help"})
+    calc = _CALC_RE.match(original)
+    if calc is not None and re.search(r"\d", calc.group("e")):
+        return plan("calculate", {"expression": calc.group("e")})
+    return None
+
+
+# Fork addition (2026-11-14): Spotify, Steam and Happ phrases. Whole-phrase and narrow.
+_LETTER_FIX = str.maketrans("СКЕФВАНМОРТХсскефванморт", "CKEFBAHMOPTXcckefbahmopt")
+_STEAM_WORD = r"(?:стим\w*|steam)"
+_HAPP_WORD = r"(?:happ|хапп\w*|хэпп\w*|хепп\w*)"
+_SPOTIFY_ACTIONS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(_WAKE_PREFIX + r"(?:" + body + r")[\s?.!]*$", re.I), action)
+    for body, action in (
+        (r"что\s+(?:сейчас\s+)?играет|как\s+называется\s+(?:эта\s+|текущая\s+)?(?:песня|трек|композиция)|какой\s+(?:сейчас\s+)?трек(?:\s+играет)?",
+         "now_playing"),
+        (r"(?:включи|поставь)\s+(?:случайн\w+\s+(?:трек|песню|композицию))|случайн\w+\s+(?:трек|песня|песню)|включи\s+что-нибудь\s+случайное",
+         "random_track"),
+        (r"(?:включи|включить)\s+(?:перемешивание|шафл|шаффл|случайный\s+порядок)|перемешай\s+(?:треки|музыку)", "shuffle_on"),
+        (r"(?:выключи|отключи|выключить)\s+(?:перемешивание|шафл|шаффл|случайный\s+порядок)", "shuffle_off"),
+        (r"(?:включи|включить)\s+повтор(?:\s+трека|\s+песни)?|зацикли(?:\s+трек|\s+песню)?", "repeat_on"),
+        (r"(?:выключи|отключи|выключить)\s+повтор(?:\s+трека|\s+песни)?", "repeat_off"),
+        (r"добавь\s+(?:этот\s+|текущий\s+)?(?:трек|песню)\s+в\s+(?:любимое|любимые|избранное)|лайкни(?:\s+(?:трек|песню))?|поставь\s+лайк(?:\s+треку)?",
+         "like"),
+        (r"(?:убери|удали|сними)\s+(?:этот\s+|текущий\s+)?(?:трек|песню)\s+из\s+(?:любимого|любимых|избранного)|сними\s+лайк(?:\s+с\s+(?:трека|песни))?",
+         "unlike"),
+        (r"(?:включи|запусти|поставь)\s+радио\s+по\s+(?:этому\s+|текущему\s+)?(?:треку|песне)|радио\s+по\s+(?:этому\s+|текущему\s+)?(?:треку|песне)",
+         "radio"),
+    )
+)
+_STEAM_INSTALL_DRIVE_RE = re.compile(
+    _WAKE_PREFIX + r"(?:скачай|установи|загрузи|поставь)\s+(?P<g>[^,]+?)\s+(?:в\s+" + _STEAM_WORD + r"\s+)?(?:на|в)\s+(?:диск\s+)?(?P<d>[a-zа-я])(?![a-zа-яё0-9])(?:\s+диск)?[\s?.!]*$",
+    re.I,
+)
+_STEAM_INSTALL_RE = re.compile(
+    _WAKE_PREFIX + r"(?:скачай|установи|загрузи|поставь)\s+(?P<g>[^,]+?)\s+(?:в|через)\s+" + _STEAM_WORD + r"(?:\s+на\s+диск\s+по\s+умолчанию)?",
+    re.I,
+)
+_STEAM_RUN_RE = re.compile(
+    _WAKE_PREFIX + r"(?:запусти|включи)\s+(?P<g>[^,]+?)\s+(?:в|через)\s+" + _STEAM_WORD, re.I,
+)
+_STEAM_DOWNLOADS_RE = re.compile(
+    _WAKE_PREFIX + r"(?:(?:открой|покажи)\s+загрузки\s+(?:в\s+)?(?:" + _STEAM_WORD + r"|стима)|что\s+(?:сейчас\s+)?качается\s+в\s+" + _STEAM_WORD + r")",
+    re.I,
+)
+_STEAM_PAUSE_RE = re.compile(
+    _WAKE_PREFIX + r"(?:останови|приостанови|поставь\s+на\s+паузу)\s+загрузки(?:\s+в\s+" + _STEAM_WORD + r"|\s+стима)?", re.I,
+)
+_STEAM_RESUME_RE = re.compile(
+    _WAKE_PREFIX + r"(?:возобнови|продолжи|запусти)\s+загрузки(?:\s+в\s+" + _STEAM_WORD + r"|\s+стима)?", re.I,
+)
+_STEAM_LIBS_RE = re.compile(
+    _WAKE_PREFIX + r"(?:какие\s+(?:у\s+меня\s+)?библиотеки\s+(?:в\s+)?" + _STEAM_WORD + r"|на\s+каких\s+дисках\s+" + _STEAM_WORD + r"|сколько\s+места\s+(?:для\s+игр|в\s+" + _STEAM_WORD + r"))[\s?.!]*$",
+    re.I,
+)
+_STEAM_STATUS_WORDS = (
+    r"в\s+сети|онлайн|нет\s+на\s+месте|отошёл|отошел|невидимк\w+|невидим\w+|не\s+в\s+сети|оффлайн|офлайн|не\s+беспокоить"
+)
+_STEAM_STATUS_RE = re.compile(
+    _WAKE_PREFIX
+    + r"(?:(?:поставь|смени|измени|переключи)\s+(?:мой\s+)?статус\s+(?:в\s+" + _STEAM_WORD + r"\s+)?(?:на\s+)?(?P<s1>" + _STEAM_STATUS_WORDS + r")"
+    r"(?:\s+в\s+" + _STEAM_WORD + r")?"
+    r"|(?:стань|будь)\s+(?P<s2>" + _STEAM_STATUS_WORDS + r")\s+в\s+" + _STEAM_WORD +
+    r"|в\s+" + _STEAM_WORD + r"\s+(?:стань|будь|поставь\s+статус)\s+(?P<s3>" + _STEAM_STATUS_WORDS + r"))[\s?.!]*$",
+    re.I,
+)
+_STATUS_CANON = {
+    "онлайн": "в сети", "отошёл": "нет на месте", "отошел": "нет на месте", "оффлайн": "не в сети", "офлайн": "не в сети",
+}
+_HAPP_PING_RE = re.compile(
+    _WAKE_PREFIX + r"(?:запусти|проверь|сделай|замерь)\s+пинг(?:\s+серверов)?(?:\s+(?:в|во)\s+" + _HAPP_WORD + r")?[\s?.!]*$", re.I,
+)
+_HAPP_FASTEST_RE = re.compile(
+    _WAKE_PREFIX + r"(?:подключись|подключи|подключиться)\s+(?:(?:впн|vpn)\s+)?(?:к|на)\s+(?:самому\s+быстрому|лучшему|ближайшему|быстрому)"
+    r"(?:\s+серверу)?(?:\s+(?:в|во)\s+" + _HAPP_WORD + r")?[\s?.!]*$"
+    r"|" + _WAKE_PREFIX + r"(?:подключись|подключи|подключиться)\s+к\s+серверу\s+с\s+(?:минимальн\w+|наименьш\w+|самой\s+низкой)\s+(?:задержк\w+|пинг\w*)"
+    r"(?:\s+(?:в|во)\s+" + _HAPP_WORD + r")?[\s?.!]*$",
+    re.I,
+)
+_HAPP_CONNECT_RE = re.compile(
+    _WAKE_PREFIX + r"(?:подключись|подключи|подключиться)\s+к\s+серверу\s+(?P<s>[\w\-| ]{2,40}?)(?:\s+(?:в|во)\s+" + _HAPP_WORD + r")?[\s?.!]*$",
+    re.I,
+)
+_HAPP_STATUS_RE = re.compile(
+    _WAKE_PREFIX + r"(?:включ[её]н\s+ли\s+(?:впн|vpn)|работает\s+ли\s+(?:впн|vpn)|статус\s+(?:впн|vpn)|подключ[её]н\s+ли\s+(?:впн|vpn))[\s?.!]*$", re.I,
+)
+
+
+def _match_apps(text: str, original: str) -> LocalActionPlan | None:
+    """Plans for Spotify, Steam and Happ phrases."""
+
+    def plan(tool: str, args: dict[str, object]) -> LocalActionPlan:
+        return LocalActionPlan(
+            mode=LocalActionMode.DIRECT,
+            tool_calls=(LocalToolCall(name=tool, args=args),),
+        )
+
+    for pattern, action in _SPOTIFY_ACTIONS:
+        if pattern.match(text):
+            return plan("spotify_control", {"action": action})
+    st = _STEAM_STATUS_RE.match(text)
+    if st is not None:
+        state = next(g for g in (st.group("s1"), st.group("s2"), st.group("s3")) if g)
+        state = re.sub(r"\s+", " ", state.strip())
+        if state.startswith("невидим"):
+            state = "невидимка"
+        return plan("steam_control", {"action": "friend_status", "state": _STATUS_CANON.get(state, state)})
+    if _STEAM_DOWNLOADS_RE.match(text):
+        return plan("steam_control", {"action": "open_downloads"})
+    if _STEAM_PAUSE_RE.match(text):
+        return plan("steam_control", {"action": "pause_downloads"})
+    if _STEAM_RESUME_RE.match(text):
+        return plan("steam_control", {"action": "resume_downloads"})
+    if _STEAM_LIBS_RE.match(text):
+        return plan("steam_control", {"action": "libraries"})
+    drive = _STEAM_INSTALL_DRIVE_RE.match(original)
+    if drive is not None:
+        letter = drive.group("d").translate(_LETTER_FIX).upper()
+        game = re.sub(r"\s+(?:в|через)\s+" + _STEAM_WORD + r"$", "", drive.group("g").strip(), flags=re.I)
+        return plan("steam_control", {"action": "install", "game": game, "drive": letter})
+    inst = _STEAM_INSTALL_RE.match(original)
+    if inst is not None:
+        return plan("steam_control", {"action": "install", "game": inst.group("g").strip()})
+    run = _STEAM_RUN_RE.match(original)
+    if run is not None:
+        return plan("steam_control", {"action": "run", "game": run.group("g").strip()})
+    if _HAPP_PING_RE.match(text):
+        return plan("happ_vpn", {"action": "ping"})
+    if _HAPP_FASTEST_RE.match(text):
+        return plan("happ_vpn", {"action": "connect_fastest"})
+    if _HAPP_STATUS_RE.match(text):
+        return plan("happ_vpn", {"action": "status"})
+    conn = _HAPP_CONNECT_RE.match(original)
+    if conn is not None:
+        return plan("happ_vpn", {"action": "connect", "server": conn.group("s").strip()})
     return None
 
 
@@ -1271,6 +1550,12 @@ def match_local_action(
     pc_plan = _match_pc_actions(normalized)
     if pc_plan is not None:
         return pc_plan
+    extras_plan = _match_extras(normalized, original)
+    if extras_plan is not None:
+        return extras_plan
+    apps_plan = _match_apps(normalized, original)
+    if apps_plan is not None:
+        return apps_plan
     scripted = _match_scripted_local_plan(normalized)
     if scripted is not None:
         return scripted

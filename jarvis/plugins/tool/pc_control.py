@@ -41,6 +41,16 @@ _WEEKDAYS = ["понедельник", "вторник", "среда", "четв
 _MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа",
            "сентября", "октября", "ноября", "декабря"]
 _NEVER_CLOSE_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"}
+_HELP_TEXT = "\n".join((
+    'Я умею, голосом и в чате:',
+    '- Программы: «открой блокнот», «закрой стим», «какие программы запущены», «просканируй диски».',
+    '- Звук: «громкость 50», «громче», «выключи звук», «пауза», «следующий трек».',
+    '- Компьютер: «состояние компьютера», «проверь интернет», «сделай скриншот», «который час».',
+    '- Окна и питание: «сверни все окна», «закрой окно», «заблокируй компьютер», «выключи компьютер» (30 секунд на отмену).',
+    '- Файлы: «найди файл договор», «открой загрузки», «открой последний скачанный файл», «запиши заметку ...».',
+    '- Время и справки: «таймер на 5 минут», «напомни через 10 минут ...», «погода», «курс доллара», «посчитай 15 процентов от 3400».',
+    '- Интернет: «найди в интернете ...».',
+))
 _ASK_ACTIONS = {"sleep", "shutdown", "restart", "close_window", "clipboard_set"}
 
 
@@ -144,6 +154,8 @@ def _do(action: str, args: dict[str, Any]) -> str:  # noqa: C901 — flat dispat
             raise ValueError(f"неизвестная страница настроек; доступны: {', '.join(sorted(_SETTINGS))}")
         os.startfile(uri)  # type: ignore[attr-defined]  # noqa: S606 — fixed ms-settings URI
         return f"Открыл настройки Windows: {page}."
+    if action == "help":
+        return _HELP_TEXT
     if action == "time":
         now = datetime.now()
         return (f"Сейчас {now:%H:%M}, {_WEEKDAYS[now.weekday()]}, "
@@ -161,7 +173,7 @@ class PcControlTool:
         "sleep, shutdown / restart (optional delay_s, default 30), "
         "shutdown_cancel, screenshot, clipboard_get, clipboard_set (text), "
         "open_settings (page: wifi, network, bluetooth, sound, display, apps, "
-        "update, power, default_apps, storage, privacy, main), time."
+        "update, power, default_apps, storage, privacy, main), time. help (list what the assistant can do)."
     )
     schema: dict[str, Any] = {
         "type": "object",
@@ -170,7 +182,7 @@ class PcControlTool:
                 "minimize_window", "maximize_window", "restore_window", "close_window", "show_desktop",
                 "minimize_all", "play_pause", "next", "previous", "stop", "lock", "sleep", "shutdown",
                 "restart", "shutdown_cancel", "screenshot", "clipboard_get", "clipboard_set",
-                "open_settings", "time"]},
+                "open_settings", "time", "help"]},
             "text": {"type": "string", "description": "Text for clipboard_set"},
             "page": {"type": "string", "description": "Settings page for open_settings"},
             "delay_s": {"type": "integer", "description": "Delay before shutdown/restart, 5-600 s", "default": 30},
