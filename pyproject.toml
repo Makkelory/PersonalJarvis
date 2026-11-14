@@ -513,6 +513,7 @@ faster-whisper = "jarvis.plugins.stt.fwhisper:FasterWhisperProvider"
 # Local streaming transcription (NVIDIA Nemotron 3.5 via sherpa-onnx / ONNX
 # Runtime). Multilingual and CPU-only; same readiness rule as above.
 nemotron-local = "jarvis.plugins.stt.nemotron_local:NemotronLocalSTT"
+gigaam-local = "jarvis.plugins.stt.gigaam_local:GigaAMLocalSTT"
 groq-api = "jarvis.plugins.stt.groq_api:GroqWhisperAPI"
 # OpenRouter cloud transcription — reuses the shared openrouter_api_key.
 openrouter-stt = "jarvis.plugins.stt.openrouter_stt:OpenRouterSTT"

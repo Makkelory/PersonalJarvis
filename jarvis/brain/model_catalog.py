@@ -651,6 +651,7 @@ STT_CATALOG: dict[str, list[ModelInfo]] = {
     # [stt].wake_*, and is not affected by anything in this catalog.)
     "faster-whisper": _ids(["large-v3"]),
     "nemotron-local": _ids(["nemotron-3.5-asr-streaming-0.6b-560ms-int8"]),
+    "gigaam-local": _ids(["giga-am-v3-russian-transducer"]),
     "openai-api": _ids(
         [
             "gpt-4o-transcribe",
