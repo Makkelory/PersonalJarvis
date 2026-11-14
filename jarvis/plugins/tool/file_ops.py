@@ -188,7 +188,7 @@ class FileOpsTool:
     name: str = "file_ops"
     risk_tier: str = "monitor"
     description: str = (
-        "Works with files and folders like Explorer. action: list (path), find "
+        "Works with files and folders like Explorer. action: list (path), latest (newest file in path, default Downloads; open=true opens it), find "
         "(query, optional path), open (path), read (path), write (path, text, "
         "optional append), mkdir (path), copy (path, dest), move (path, dest), "
         "rename (path, dest = new name), delete (path, goes to the Recycle Bin). "
@@ -199,7 +199,7 @@ class FileOpsTool:
         "type": "object",
         "properties": {
             "action": {"type": "string",
-                       "enum": ["list", "find", "open", "read", "write", "mkdir", "copy", "move", "rename", "delete"]},
+                       "enum": ["list", "find", "latest", "open", "read", "write", "mkdir", "copy", "move", "rename", "delete"]},
             "path": {"type": "string", "description": "File or folder; folder words allowed"},
             "dest": {"type": "string", "description": "Destination (copy/move) or new name (rename)"},
             "query": {"type": "string", "description": "Name fragment for find"},
@@ -240,6 +240,20 @@ class FileOpsTool:
             if not hits:
                 return f"Файлов и папок со словом «{query}» не найдено (поиск до {_FIND_BUDGET_S:.0f} с)."
             return f"Найдено {len(hits)}:\n" + "\n".join(f"- {h}  — {_describe(h)}" for h in hits)
+        if action == "latest":
+            folder = resolve_path(raw or "загрузки")
+            if not folder.is_dir():
+                raise ValueError(f"{folder} — не папка или не существует")
+            skip = (".crdownload", ".part", ".tmp", ".partial")
+            files = [p for p in folder.iterdir() if p.is_file() and not p.name.lower().endswith(skip)]
+            if not files:
+                return f"В {folder} файлов нет."
+            newest = max(files, key=lambda p: p.stat().st_mtime)
+            opened = ""
+            if args.get("open"):
+                os.startfile(str(newest))  # type: ignore[attr-defined]  # noqa: S606 — user-requested open
+                opened = " Открыл его."
+            return f"Последний файл в {folder.name}: {_describe(newest)}.{opened}"
         if not raw:
             raise ValueError("path is required")
         path = resolve_path(raw)

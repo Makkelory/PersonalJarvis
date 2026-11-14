@@ -9063,6 +9063,7 @@ class BrainManager:
                         call.name, sorted(self._local_action_tools), tid,
                     )
                     return None
+                call_timeout_s = max(timeout_s, _LOCAL_TOOL_TIMEOUTS_S.get(call.name, 0.0))
                 try:
                     result = await asyncio.wait_for(
                         self._tool_executor.execute(
@@ -9072,7 +9073,7 @@ class BrainManager:
                             trace_id=tid,
                             config_snapshot=exec_config,
                         ),
-                        timeout=timeout_s,
+                        timeout=call_timeout_s,
                     )
                 except TimeoutError:
                     # wait_for cancels the tool coroutine but NOT the OS work it
@@ -9081,14 +9082,14 @@ class BrainManager:
                     log.warning(
                         "[LOCAL_ACTION] tool=%s exceeded %.3gs; the launch may "
                         "already have happened (trace=%s)",
-                        call.name, timeout_s, tid,
+                        call.name, call_timeout_s, tid,
                     )
                     await self._bus.publish(ActionExecuted(
                         trace_id=tid,
                         tool_name=call.name,
                         success=False,
-                        duration_ms=int(timeout_s * 1000),
-                        error=f"timeout after {timeout_s:.3g}s",
+                        duration_ms=int(call_timeout_s * 1000),
+                        error=f"timeout after {call_timeout_s:.3g}s",
                     ))
                     # Never speak the internal tool name + machine "timeout after
                     # 3s" string; a plain, localized line via the composer instead.
@@ -13751,6 +13752,20 @@ def _is_invalid_model_exc(msg: str) -> bool:
 #: small enough for this to matter — see ``_fit_tools_to_context_window``.
 _CONTEXT_FIT_RESERVE_TOKENS = 4096
 
+#: Per-tool ceilings (seconds) for the deterministic fast path. The default
+#: ``local_action.direct_timeout_s`` suits instant tools; UI-driving tools wait for
+#: apps, OCR and network, and a cancelled wait would throw away a finished result
+#: and speak "took too long" for work that actually succeeded.
+_LOCAL_TOOL_TIMEOUTS_S: dict[str, float] = {
+    "happ_vpn": 150.0,
+    "steam_control": 120.0,
+    "spotify_control": 45.0,
+    "list_apps": 60.0,
+    "file_ops": 45.0,
+    "get_weather": 25.0,
+    "get_rates": 25.0,
+}
+
 #: Tools never trimmed from a local brain's surface (see ``_fit_tools_to_brain``).
 #: Both spellings are listed: registry keys use ``_``, entry points use ``-``.
 _PINNED_TOOL_NAMES = frozenset({
@@ -13760,6 +13775,10 @@ _PINNED_TOOL_NAMES = frozenset({
     "search-web", "run-shell", "open-app", "switch-window", "type-text",
     "list-apps", "close-app", "set-volume", "system-status",
     "file-ops", "pc-control", "network-status",
+    "set_timer", "get_weather", "get_rates", "calculate",
+    "set-timer", "get-weather", "get-rates",
+    "spotify_control", "steam_control", "happ_vpn",
+    "spotify-control", "steam-control", "happ-vpn",
 })
 
 #: Chars per token for the size estimate. Deliberately low: tool schemas are
