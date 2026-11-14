@@ -2020,6 +2020,8 @@ def test_router_tools_is_pure_dispatcher_set() -> None:
             "spotify-control",
             "steam-control",
             "happ-vpn",
+            "window-control",
+            "app-catalog",
         }
     )
     assert ROUTER_TOOLS == expected, (

@@ -221,6 +221,14 @@ def _is_plausible_app_name(app_name: str) -> tuple[bool, str, str]:
     candidates = {low, app_name.strip()}
     if _resolve_via_start_menu(candidates) is not None:
         return True, "", ""
+    # Fork addition: the program catalog and Russian spoken aliases.
+    from jarvis.plugins.tool import app_catalog  # noqa: PLC0415
+
+    if app_catalog.lookup(app_name) is not None:
+        return True, "", ""
+    canonical = app_catalog.spoken_to_canonical(app_name)
+    if canonical != app_name and (shutil.which(canonical) or canonical.endswith((":", ".msc"))):
+        return True, "", ""
     if launch_services_can_open(candidates) is not None:
         return True, "", ""
     if desktop_entry_exists(candidates) is not None:

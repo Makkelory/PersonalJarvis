@@ -283,6 +283,7 @@ ROUTER_TOOLS = frozenset({
     "file-ops", "pc-control", "network-status",
     "set-timer", "get-weather", "get-rates", "calculate",
     "spotify-control", "steam-control", "happ-vpn",
+    "window-control", "app-catalog",
 })
 
 # Phase 7.3 — self-mod tools are registered directly in the router loader in
@@ -678,6 +679,8 @@ def _load_local_action_tools(
     from jarvis.plugins.tool.happ_vpn import HappVpnTool
     from jarvis.plugins.tool.info_tools import CalculateTool, GetRatesTool, GetWeatherTool
     from jarvis.plugins.tool.spotify_control import SpotifyControlTool
+    from jarvis.plugins.tool.app_catalog import AppCatalogTool, refresh_in_background as _refresh_catalog
+    from jarvis.plugins.tool.window_control import WindowControlTool
     from jarvis.plugins.tool.steam_control import SteamControlTool
     from jarvis.plugins.tool.open_app import OpenAppTool
     from jarvis.plugins.tool.pc_control import NetworkStatusTool, PcControlTool
@@ -688,6 +691,7 @@ def _load_local_action_tools(
 
     # Timers speak through the bus and survive restarts (restores data/timers.json).
     _reminders.bind(bus)
+    _refresh_catalog()  # remembers where every program lives (rescans when stale)
 
     return {
         "open_app": OpenAppTool(),
@@ -706,6 +710,8 @@ def _load_local_action_tools(
         "spotify_control": SpotifyControlTool(),
         "steam_control": SteamControlTool(),
         "happ_vpn": HappVpnTool(),
+        "window_control": WindowControlTool(),
+        "app_catalog": AppCatalogTool(),
         "type_text": TypeTextTool(),
         "hotkey": HotkeyTool(),
         "dispatch_to_harness": DispatchToHarnessTool(

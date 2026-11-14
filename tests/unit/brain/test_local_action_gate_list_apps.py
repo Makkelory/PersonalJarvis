@@ -92,7 +92,7 @@ def test_system_control_ignores_unrelated_or_invalid(text: str) -> None:
         ("отмени выключение", "pc_control", {"action": "shutdown_cancel"}),
         ("сверни все окна", "pc_control", {"action": "show_desktop"}),
         ("закрой окно", "pc_control", {"action": "close_window"}),
-        ("пауза", "spotify_control", {"action": "play_pause"}),
+        ("пауза", "spotify_control", {"action": "pause"}),
         ("следующий трек", "spotify_control", {"action": "next"}),
         ("который час", "pc_control", {"action": "time"}),
         ("проверь интернет", "network_status", {}),

@@ -220,6 +220,18 @@ def resolve_app_launch_target(app_name: str) -> LaunchTarget:
 
     plat = detect_platform()
     if plat == "win32":
+        # Fork addition: spoken Russian names ("стим", "спотифай") -> product names.
+        from jarvis.plugins.tool import app_catalog  # noqa: PLC0415
+
+        spoken = app_catalog.spoken_to_canonical(raw)
+        if spoken != raw:
+            raw = spoken
+            normalized = raw.lower()
+            normalized_without_exe = normalized.removesuffix(".exe")
+            if normalized_without_exe == "spotify":
+                return LaunchTarget("startfile", "spotify:")
+            if raw.startswith("ms-settings:"):
+                return LaunchTarget("startfile", raw)
         return _resolve_windows(normalized, normalized_without_exe, raw)
     if plat == "darwin":
         return _resolve_darwin(normalized_without_exe)
@@ -265,6 +277,14 @@ def _resolve_windows(
     lnk = _resolve_via_start_menu({normalized_without_exe, canonical})
     if lnk:
         return LaunchTarget("startfile", lnk)
+
+    # Fork addition: the catalog of every program on this PC (Start Menu,
+    # Store apps, App Paths, executables under Program Files and game folders).
+    from jarvis.plugins.tool import app_catalog  # noqa: PLC0415
+
+    cataloged = app_catalog.launch_target_for(raw)
+    if cataloged is not None:
+        return cataloged
 
     # Last resort: hand the raw name to the shell. The plausibility gate in
     # open_app has already vetted that this is a whitelisted/known name, so this

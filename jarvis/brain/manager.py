@@ -13771,6 +13771,8 @@ _LOCAL_TOOL_TIMEOUTS_S: dict[str, float] = {
     "happ_vpn": 150.0,
     "steam_control": 120.0,
     "spotify_control": 45.0,
+    "app_catalog": 90.0,
+    "window_control": 20.0,
     "list_apps": 60.0,
     "file_ops": 45.0,
     "get_weather": 25.0,
@@ -13790,6 +13792,7 @@ _PINNED_TOOL_NAMES = frozenset({
     "set-timer", "get-weather", "get-rates",
     "spotify_control", "steam_control", "happ_vpn",
     "spotify-control", "steam-control", "happ-vpn",
+    "window_control", "app_catalog", "window-control", "app-catalog",
 })
 
 #: Chars per token for the size estimate. Deliberately low: tool schemas are

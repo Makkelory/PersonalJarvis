@@ -147,6 +147,9 @@ def _seed_start_menu(monkeypatch: pytest.MonkeyPatch, tmp_path, *shortcut_relpat
     monkeypatch.setattr(app_resolver, "detect_platform", lambda: "win32")
     monkeypatch.setattr(app_resolver, "_resolve_via_app_paths", lambda exe: None)
     monkeypatch.setattr(app_resolver.shutil, "which", lambda name: None)
+    from jarvis.plugins.tool import app_catalog  # the real PC catalog must not answer here
+
+    monkeypatch.setattr(app_catalog, "_entries", [])
     appdata = tmp_path / "appdata"
     programdata = tmp_path / "programdata"
     programs = appdata / "Microsoft" / "Windows" / "Start Menu" / "Programs"
